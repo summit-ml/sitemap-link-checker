@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sitemap Link Checker</title>
+<style>
+  :root { --ink: #16202a; --muted: #5b6875; --line: #d9dee4; --accent: #0b5cad; --bg: #f6f8fa; --card: #ffffff; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #e8edf2; --muted: #9aa7b4; --line: #303a45; --accent: #6db3f2; --bg: #12171c; --card: #1a2128; } }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 28px; margin: 0 0 8px; }
+  h2 { font-size: 19px; margin: 32px 0 8px; }
+  p, li { color: var(--ink); }
+  .lead { color: var(--muted); margin-top: 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 20px; margin: 16px 0; }
+  .drag { display: inline-block; padding: 12px 20px; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 600; text-decoration: none; cursor: grab; }
+  .drag:active { cursor: grabbing; }
+  button.plain { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+  code, kbd { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: 14px; }
+  ol { padding-left: 22px; }
+  li { margin: 6px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .ok { color: #1a7f37; } .warn { color: #b26a00; } .bad { color: #c62828; }
+  #copied { color: var(--muted); margin-left: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Sitemap Link Checker</h1>
+  <p class="lead">This is the no-install version of <a href="https://github.com/summit-ml/sitemap-link-checker">Sitemap Link Checker</a>. It checks every link in a sitemap and tells you which ones open a real page, which redirect, and which land on a not-found or error page. It runs inside your own browser, on the site you are testing, so it uses the login you already have.</p>
+
+  <div class="card">
+    <h2 style="margin-top:0">Step 1: add the button to your browser (once)</h2>
+    <p>Show the bookmarks bar (<kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>B</kbd> in Chrome, View &gt; Show Favorites Bar in Safari), then drag this button onto it:</p>
+    <p><a class="drag" id="bookmarklet" href="#">Check Sitemap Links</a></p>
+    <p style="color:var(--muted)">Dragging not working? <button class="plain" id="copy" type="button">Copy the code</button><span id="copied"></span><br>Then open the site, press <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>J</kbd> (Chrome) to open the Console, paste, and press <kbd>Return</kbd>.</p>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">Step 2: run it</h2>
+    <ol>
+      <li>Open the site you want to test, for example its home page. Enter the storefront password if you are asked.</li>
+      <li>Click <strong>Check Sitemap Links</strong> in your bookmarks bar. A panel opens over the page.</li>
+      <li>The sitemap address is filled in for you. Click <strong>Load sitemap</strong>, tick the sitemap files you want, then click <strong>Check links</strong>.</li>
+      <li>When it finishes, use the filter buttons to see only the problems, and <strong>Download CSV</strong> to save the results.</li>
+    </ol>
+    <p style="color:var(--muted)">You can also paste a list of links, one per line, instead of loading a sitemap.</p>
+  </div>
+
+  <h2>What the results mean</h2>
+  <table>
+    <tr><th>Result</th><th>Meaning</th></tr>
+    <tr><td class="ok">OK</td><td>The link opened a normal page.</td></tr>
+    <tr><td class="warn">Redirect</td><td>The link sent you to a different address. The final address is shown.</td></tr>
+    <tr><td class="warn">Redirect to home</td><td>The link sent you to the home page, which usually means the product or category is no longer available.</td></tr>
+    <tr><td class="bad">Not found</td><td>The site answered "not found", or the page shows one of the not-found messages.</td></tr>
+    <tr><td class="bad">No results</td><td>The link opened a search or category page that lists no products.</td></tr>
+    <tr><td class="bad">Error</td><td>The site returned an error page, or the link could not be loaded at all.</td></tr>
+  </table>
+
+  <h2>Good to know</h2>
+  <ul>
+    <li><strong>Run it on the same site as the sitemap.</strong> A browser only lets a page check links on its own site. Links to a different site are listed as "Skipped".</li>
+    <li><strong>Not-found messages are a list you can edit.</strong> Some pages load normally but only say "we can't find that". The checker looks for those phrases in the page text. If it misses one, add the wording to the list in the panel and run again. Each flagged row shows the phrase that matched.</li>
+    <li><strong>It is gentle on the site:</strong> three links at a time. A few hundred links take a few minutes.</li>
+    <li>Nothing is installed and nothing is sent anywhere. Reloading the page removes the panel.</li>
+  </ul>
+</main>
+
+<script type="text/plain" id="checker-source">
+/*CHECKER_SOURCE*/
+</script>
+
+<script>
+  (function () {
+    var source = document.getElementById('checker-source').textContent.trim();
+    document.getElementById('bookmarklet').href = 'javascript:' + encodeURIComponent(source);
+    document.getElementById('bookmarklet').addEventListener('click', function (event) {
+      event.preventDefault();
+      alert('Drag this button to your bookmarks bar, then click it while you are on the site you want to check.');
+    });
+    document.getElementById('copy').addEventListener('click', function () {
+      var done = function (ok) { document.getElementById('copied').textContent = ok ? 'Copied.' : 'Could not copy. Select the code from the page source instead.'; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(source).then(function () { done(true); }, function () { done(false); });
+      } else { done(false); }
+    });
+  }());
+</script>
+</body>
+</html>
