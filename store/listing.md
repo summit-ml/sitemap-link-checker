@@ -35,6 +35,7 @@ WHAT IT FINDS
 BUILT FOR REAL SITES
 - Sign-ins and bot checks: if the site pushes back, the run pauses, tells you what to do, and picks up where it left off
 - Staging sites: check a production sitemap's links on the staging site you are on
+- Every sitemap in robots.txt is found for you, and the links in the site's llms.txt can be checked too
 - Filters for result and status code, search, copy links, and CSV export
 - Recheck only the problems after a fix
 - Response time for every page, and a note when the whole site is slow

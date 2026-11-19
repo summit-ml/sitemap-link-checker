@@ -413,9 +413,40 @@
     return best ? best.pathname + best.search : '';
   }
 
+  /**
+   * The sitemaps a site declares, as addresses the checker can read.
+   * A sitemap named on another host (a staging robots.txt copied from production, say) is read at the same path on this site.
+   * @param {string[]} list - addresses from robots.txt, absolute or relative
+   * @param {string} origin - the origin of the site being tested
+   * @returns {string[]} absolute addresses on this site, in order, without duplicates or .gz files
+   */
+  function declaredSitemaps(list, origin) {
+    var seen = {};
+    return (list || []).map(function (u) { try { return new URL(u, origin + '/'); } catch (e) { return null; } })
+      .filter(function (u) { return u && /^https?:$/.test(u.protocol) && !/\.gz$/i.test(u.pathname); })
+      .map(function (u) { return swapOrigin(u.href, origin); })
+      .filter(function (u) { if (seen[u]) { return false; } seen[u] = 1; return true; });
+  }
+
+  /**
+   * The links in an llms.txt file: Markdown links first, then any bare addresses.
+   * @param {string} text - the contents of the file
+   * @param {string} base - the address of the file, for relative links
+   * @returns {string[]} absolute http(s) addresses, in order, without duplicates; [] when the text is a web page, not llms.txt
+   */
+  function llmsLinks(text, base) {
+    text = String(text || '');
+    if (/^\s*</.test(text)) { return []; }
+    var found = [], seen = {};
+    var rest = text.replace(/\]\(\s*<?([^\s)>]+)>?(?:\s+"[^"]*")?\s*\)/g, function (all, target) { found.push(target); return '] '; });
+    (rest.match(/https?:\/\/[^\s<>()\[\]"'`]+/gi) || []).forEach(function (u) { found.push(u.replace(/[.,;:!?]+$/, '')); });
+    return found.map(function (u) { try { var to = new URL(u, base); to.hash = ''; return /^https?:$/.test(to.protocol) ? to.href : ''; } catch (e) { return ''; } })
+      .filter(function (u) { if (!u || seen[u]) { return false; } seen[u] = 1; return true; });
+  }
+
   // Node (tests): expose the pure helpers and stop before any DOM work.
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { classify: classify, sitemapAddress: sitemapAddress, robotsSitemaps: robotsSitemaps, swapOrigin: swapOrigin, otherSites: otherSites, duration: duration, slowLimit: slowLimit, slowSite: slowSite, timeLeft: timeLeft, pickSitemap: pickSitemap, norm: norm, isHome: isHome, visibleText: visibleText, csvCell: csvCell, isLogin: isLogin, canonicalOf: canonicalOf, robotsOf: robotsOf, sameAsNotFound: sameAsNotFound, needsHuman: needsHuman, codeOf: codeOf, sortCodes: sortCodes, codePreview: codePreview, matches: matches, DEFAULT_PHRASES: DEFAULT_PHRASES };
+    module.exports = { classify: classify, sitemapAddress: sitemapAddress, robotsSitemaps: robotsSitemaps, swapOrigin: swapOrigin, otherSites: otherSites, duration: duration, slowLimit: slowLimit, slowSite: slowSite, timeLeft: timeLeft, pickSitemap: pickSitemap, declaredSitemaps: declaredSitemaps, llmsLinks: llmsLinks, norm: norm, isHome: isHome, visibleText: visibleText, csvCell: csvCell, isLogin: isLogin, canonicalOf: canonicalOf, robotsOf: robotsOf, sameAsNotFound: sameAsNotFound, needsHuman: needsHuman, codeOf: codeOf, sortCodes: sortCodes, codePreview: codePreview, matches: matches, DEFAULT_PHRASES: DEFAULT_PHRASES };
     return;
   }
 
@@ -492,12 +523,13 @@
     '</style>',
     '<div class="wrap"><div class="panel" role="dialog" aria-label="Sitemap Link Checker">',
     '<div class="top"><h2><svg viewBox="0 0 128 128" width="28" height="28" aria-hidden="true"><rect width="128" height="128" rx="28" fill="#F0EFEB"/><path d="M33.58,37.93l-23.9,26.07,23.9,26.07M94.42,37.93l23.9,26.07-23.9,26.07" stroke="#1F1C1F" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M45.56,53.56l19.76,19.76,35.91-44.9" stroke="#C42D82" stroke-width="15" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Sitemap Link Checker</h2><button id="close" aria-label="Close">Close</button></div>',
-    '<div class="row between"><span class="sec">Links to check</span><div class="seg" role="group" aria-label="Where the links come from"><button id="srcMap" class="on" aria-pressed="true">From a sitemap</button><button id="srcPaste" aria-pressed="false">Pasted list</button></div></div>',
+    '<div class="row between"><span class="sec">Links to check</span><div class="seg" role="group" aria-label="Where the links come from"><button id="srcMap" class="on" aria-pressed="true">From a sitemap</button><button id="srcPaste" aria-pressed="false">Pasted list</button><button id="srcLlms" aria-pressed="false" hidden>llms.txt</button></div></div>',
     '<div id="paneMap">',
     '<div class="row"><div class="addr grow"><span id="site" title="The checker can only read sitemaps on the site it is opened on"></span><input id="sm" type="text" aria-label="Sitemap address" aria-describedby="site" spellcheck="false"></div><button id="load">Load sitemap</button></div>',
     '<div id="files"></div>',
     '</div>',
     '<div id="panePaste" hidden><textarea id="paste" aria-label="Links to check, one per line" placeholder="https://…"></textarea><p class="help">One link per line. Only links on this site can be checked.</p></div>',
+    '<div id="paneLlms" hidden><div class="files hint" id="llmsInfo"></div></div>',
     '<label class="swap" id="swapRow" hidden><input type="checkbox" id="swap"><span id="swapText"></span></label>',
     '<details class="opts"><summary>Options</summary><div class="optbody">',
     '<div><label for="pace">Pace</label><select id="pace"><option value="normal">Normal (3 at a time)</option><option value="gentle">Gentle (1 at a time)</option><option value="fast">Fast (6 at a time)</option></select>',
@@ -532,20 +564,40 @@
   // robots.txt, which is where a site declares its sitemaps. Never overrides what the tester typed or loaded.
   var typed = false;
   $('sm').addEventListener('input', function () { typed = true; });
-  function suggestSitemap(path, where) {
+  function suggestSitemap(path, hint) {
     if (!path || typed || files.length) { return; }
     $('sm').value = path;
-    filesHint('Found this site\'s sitemap ' + where + '. Click Load sitemap to list its files.');
+    filesHint(hint);
   }
   function pageSitemaps() {
     return Array.prototype.map.call(document.querySelectorAll('link[rel~="sitemap" i][href], a[href]'), function (n) { return n; })
       .filter(function (n) { try { return n.tagName === 'LINK' || /sitemap[^/]*\.xml$/i.test(new URL(n.href).pathname); } catch (e) { return false; } })
       .map(function (n) { return n.href; });
   }
-  suggestSitemap(pickSitemap(pageSitemaps(), location.origin), 'linked on this page');
+  suggestSitemap(pickSitemap(pageSitemaps(), location.origin), 'Found this site\'s sitemap linked on this page. Click Load sitemap to list its files.');
+  // every sitemap robots.txt declares; when there are several, Load sitemap reads them all
+  var declared = [];
   getText(location.origin + '/robots.txt').then(function (got) {
-    if (got.res.ok) { suggestSitemap(pickSitemap(robotsSitemaps(got.text), location.origin), 'in robots.txt'); }
+    if (!got.res.ok || typed || files.length) { return; }
+    declared = declaredSitemaps(robotsSitemaps(got.text), location.origin);
+    suggestSitemap(pickSitemap(declared, location.origin), declared.length > 1 ?
+      'This site\'s robots.txt lists ' + declared.length + ' sitemaps. Click Load sitemap to list them all, or change the path above to load only one.' :
+      'Found this site\'s sitemap in robots.txt. Click Load sitemap to list its files.');
   }).catch(function () { /* no robots.txt is fine */ });
+
+  // llms.txt is a hand-kept list of the pages a site wants AI tools to read; when the site has one, offer its links as a source
+  var llms = [], LLMS = location.origin + '/llms.txt';
+  getText(LLMS).then(function (got) {
+    var kind = (got.res.headers.get('content-type') || '').toLowerCase();
+    if (!got.res.ok || /html/.test(kind)) { return; }
+    llms = llmsLinks(got.text, got.res.url || LLMS);
+    if (!llms.length) { return; }
+    $('srcLlms').textContent = 'llms.txt (' + llms.length + ')'; $('srcLlms').hidden = false;
+    var info = $('llmsInfo'), a = document.createElement('a');
+    a.href = LLMS; a.target = '_blank'; a.rel = 'noopener'; a.textContent = '/llms.txt';
+    info.appendChild(document.createTextNode('This site has an ')); info.appendChild(a);
+    info.appendChild(document.createTextNode(' file with ' + plural(llms.length, 'link') + '. Click Check links to check ' + (llms.length === 1 ? 'it' : 'them all') + '.'));
+  }).catch(function () { /* no llms.txt is fine */ });
 
   function setStatus(t) { $('status').textContent = t; }
   function cls(r) { return r.replace(/ /g, '-'); }
@@ -654,7 +706,8 @@
     $('files').innerHTML = ''; $('files').appendChild(box);
   }
   async function loadSitemap() {
-    await readSitemap();
+    // untouched path and several sitemaps in robots.txt: read them all
+    if (!typed && declared.length > 1) { await readDeclared(); } else { await readSitemap(); }
     if (!files.length) { filesHint(FILES_HINT); }
   }
   async function readSitemap() {
@@ -675,46 +728,67 @@
         setStatus('Could not load the sitemap (' + got.res.status + ').' + (gate ? ' The site wants a sign-in or a bot check. Open the sitemap address in a new tab, get through it there, then load again.' : ''));
         return;
       }
-      var parsed = locs(got.text);
-      if (!parsed.list.length) { setStatus('No links found at that address. Check that it is a sitemap.'); return; }
-      if (parsed.isIndex) {
-        for (var i = 0; i < parsed.list.length; i++) {
-          var child = parsed.list[i], count = '?', links = [];
-          try {
-            // a sitemap index copied from another environment names files there; read the same file on this site
-            var c = await getText(swapOrigin(child, location.origin));
-            if (c.res.ok) { links = locs(c.text).list; count = links.length; }
-          } catch (e) { count = '?'; }
-          files.push({ url: child, links: links, count: count });
-          setStatus('Reading sitemap files… ' + (i + 1) + ' of ' + parsed.list.length);
-        }
-      } else {
-        files.push({ url: url, links: parsed.list, count: parsed.list.length });
-      }
-      // small sitemaps are ready to go; with a large one the tester picks the files that matter
-      var total = files.reduce(function (sum, f) { return sum + (typeof f.count === 'number' ? f.count : 0); }, 0);
-      var tickAll = files.length === 1 || total <= 500;
-      var box = document.createElement('div'); box.className = 'files';
-      files.forEach(function (f, i) {
-        var l = document.createElement('label'), cb = document.createElement('input');
-        cb.type = 'checkbox'; cb.checked = tickAll; cb.dataset.i = i;
-        l.appendChild(cb); l.appendChild(document.createTextNode(f.url.split('/').pop() + '  (' + f.count + ' links)'));
-        box.appendChild(l);
-      });
-      $('files').innerHTML = ''; $('files').appendChild(box);
-      updateSwap();
-      setStatus(files.length + ' sitemap file' + (files.length === 1 ? '' : 's') + ' found. Tick the ones to check.');
+      files = await sitemapFiles(url, got.text);
+      if (!files.length) { setStatus('No links found at that address. Check that it is a sitemap.'); return; }
+      showFiles(files.length + ' sitemap file' + (files.length === 1 ? '' : 's') + ' found. Tick the ones to check.');
     } catch (e) {
       setStatus('Could not load the sitemap: ' + (e && e.message ? e.message : e));
     }
   }
+  // the files behind one sitemap address: itself, or the files an index names
+  async function sitemapFiles(url, text) {
+    var parsed = locs(text), out = [];
+    if (!parsed.isIndex) { return parsed.list.length ? [{ url: url, links: parsed.list, count: parsed.list.length }] : []; }
+    for (var i = 0; i < parsed.list.length; i++) {
+      var child = parsed.list[i], count = '?', links = [];
+      try {
+        // a sitemap index copied from another environment names files there; read the same file on this site
+        var c = await getText(swapOrigin(child, location.origin));
+        if (c.res.ok) { links = locs(c.text).list; count = links.length; }
+      } catch (e) { count = '?'; }
+      out.push({ url: child, links: links, count: count });
+      setStatus('Reading sitemap files… ' + (i + 1) + ' of ' + parsed.list.length);
+    }
+    return out;
+  }
+  // every sitemap robots.txt declares, as one list of files
+  async function readDeclared() {
+    files = [];
+    filesHint('Looking for sitemap files…');
+    var seen = {}, missed = 0;
+    for (var i = 0; i < declared.length; i++) {
+      setStatus('Loading sitemap ' + (i + 1) + ' of ' + declared.length + '…');
+      var found = [];
+      try { var got = await getText(declared[i]); if (got.res.ok) { found = await sitemapFiles(declared[i], got.text); } } catch (e) { found = []; }
+      if (!found.length) { missed++; }
+      found.forEach(function (f) { if (!seen[f.url]) { seen[f.url] = 1; files.push(f); } });
+    }
+    if (!files.length) { setStatus('Could not read the sitemaps robots.txt lists. Enter a sitemap path above and load again.'); typed = true; return; }
+    showFiles(files.length + ' sitemap file' + (files.length === 1 ? '' : 's') + ' found from the ' + declared.length + ' sitemaps in robots.txt' +
+      (missed ? ' (' + missed + ' could not be read)' : '') + '. Tick the ones to check.');
+  }
+  function showFiles(message) {
+    // small sitemaps are ready to go; with a large one the tester picks the files that matter
+    var total = files.reduce(function (sum, f) { return sum + (typeof f.count === 'number' ? f.count : 0); }, 0);
+    var tickAll = files.length === 1 || total <= 500;
+    var box = document.createElement('div'); box.className = 'files';
+    files.forEach(function (f, i) {
+      var l = document.createElement('label'), cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.checked = tickAll; cb.dataset.i = i;
+      l.appendChild(cb); l.appendChild(document.createTextNode(f.url.split('/').pop() + '  (' + f.count + ' links)'));
+      box.appendChild(l);
+    });
+    $('files').innerHTML = ''; $('files').appendChild(box);
+    updateSwap();
+    setStatus(message);
+  }
 
-  // links come from one place at a time: the ticked sitemap files, or the pasted list
+  // links come from one place at a time: the ticked sitemap files, the pasted list, or the site's llms.txt
   function setSource(name) {
     source = name;
-    $('paneMap').hidden = name !== 'map'; $('panePaste').hidden = name !== 'paste';
+    $('paneMap').hidden = name !== 'map'; $('panePaste').hidden = name !== 'paste'; $('paneLlms').hidden = name !== 'llms';
     $('swapRow').hidden = true; updateSwap();
-    [['srcMap', 'map'], ['srcPaste', 'paste']].forEach(function (pair) {
+    [['srcMap', 'map'], ['srcPaste', 'paste'], ['srcLlms', 'llms']].forEach(function (pair) {
       $(pair[0]).className = pair[1] === name ? 'on' : ''; $(pair[0]).setAttribute('aria-pressed', pair[1] === name ? 'true' : 'false');
     });
   }
@@ -722,6 +796,8 @@
     var list = [];
     if (source === 'map') {
       Array.prototype.forEach.call(root.querySelectorAll('.files input:checked'), function (cb) { list = list.concat(files[+cb.dataset.i].links); });
+    } else if (source === 'llms') {
+      list = llms.slice();
     } else {
       $('paste').value.split(/\s+/).forEach(function (u) { if (/^https?:\/\//i.test(u)) { list.push(u); } });
     }
@@ -740,7 +816,8 @@
       (other.hosts > 1 ? ' and ' + plural(other.hosts - 1, 'other site') : '') + ', which the checker cannot read from here. Check ' +
       (other.count === 1 ? 'it' : 'them') + ' on this site (' + location.host + ') instead, at the same paths.';
     // when most of the list is elsewhere, it is almost certainly the same site in another environment
-    if (wasHidden) { $('swap').checked = other.count * 2 >= all.length; }
+    // (an llms.txt file links to other sites on purpose, so there the choice is left to the tester)
+    if (wasHidden) { $('swap').checked = source !== 'llms' && other.count * 2 >= all.length; }
   }
 
   function gated() { return rows.filter(needsHuman); }
@@ -854,6 +931,7 @@
   $('load').addEventListener('click', loadSitemap);
   $('srcMap').addEventListener('click', function () { setSource('map'); });
   $('srcPaste').addEventListener('click', function () { setSource('paste'); });
+  $('srcLlms').addEventListener('click', function () { setSource('llms'); });
   $('sm').addEventListener('keydown', function (e) { if (e.key === 'Enter') { loadSitemap(); } });
   $('start').addEventListener('click', start);
   $('stop').addEventListener('click', function () { stopRequested = true; setStatus('Stopping…'); });

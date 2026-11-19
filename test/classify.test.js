@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { classify, sitemapAddress, robotsSitemaps, pickSitemap, swapOrigin, otherSites, duration, slowLimit, slowSite, timeLeft, norm, isHome, visibleText, csvCell, isLogin, canonicalOf, robotsOf, sameAsNotFound, needsHuman, codeOf, sortCodes, codePreview, matches, DEFAULT_PHRASES } = require('../extension/checker.js');
+const { classify, sitemapAddress, robotsSitemaps, pickSitemap, declaredSitemaps, llmsLinks, swapOrigin, otherSites, duration, slowLimit, slowSite, timeLeft, norm, isHome, visibleText, csvCell, isLogin, canonicalOf, robotsOf, sameAsNotFound, needsHuman, codeOf, sortCodes, codePreview, matches, DEFAULT_PHRASES } = require('../extension/checker.js');
 
 const base = { requestedUrl: 'https://shop.example/luggage/', finalUrl: 'https://shop.example/luggage/', status: 200, redirected: false, title: 'Luggage', heading: 'Luggage', text: 'luggage 20 results ' + 'carry-on and checked bags for every trip. '.repeat(6), phrases: DEFAULT_PHRASES };
 const check = (overrides) => classify(Object.assign({}, base, overrides)).result;
@@ -227,6 +227,35 @@ test('pickSitemap prefers an index on the same site and skips what it cannot rea
     assert.strictEqual(pickSitemap(['https://cdn.example/sitemap.xml', '/maps/sitemap.xml?lang=en'], origin), '/maps/sitemap.xml?lang=en');
     assert.strictEqual(pickSitemap(['https://shop.example/sitemap.xml.gz', 'https://other.example/sitemap.xml'], origin), '');
     assert.strictEqual(pickSitemap([], origin), '');
+});
+
+test('declaredSitemaps keeps every sitemap robots.txt lists, readable from this site', () => {
+    const origin = 'https://dev.shop.example';
+    assert.deepStrictEqual(
+        declaredSitemaps(['https://dev.shop.example/products.xml', '/blog.xml', 'https://www.shop.example/pages.xml', 'https://dev.shop.example/products.xml', 'https://dev.shop.example/old.xml.gz', 'ftp://dev.shop.example/x.xml'], origin),
+        ['https://dev.shop.example/products.xml', 'https://dev.shop.example/blog.xml', 'https://dev.shop.example/pages.xml']
+    );
+    assert.deepStrictEqual(declaredSitemaps([], origin), []);
+});
+
+test('llmsLinks reads Markdown links and bare addresses from llms.txt', () => {
+    const text = [
+        '# Shop', '', '> Bags and luggage.', '', '## Docs',
+        '- [Shipping](https://shop.example/help/shipping.md): how we ship',
+        '- [Returns](/help/returns "Returns policy")',
+        '- [Shipping again](https://shop.example/help/shipping.md#rates)',
+        '- [Email](mailto:help@shop.example)',
+        'More at https://shop.example/about.',
+        '## Optional', '- [Source](https://github.com/shop/site)'
+    ].join('\n');
+    assert.deepStrictEqual(llmsLinks(text, 'https://shop.example/llms.txt'), [
+        'https://shop.example/help/shipping.md', 'https://shop.example/help/returns', 'https://github.com/shop/site', 'https://shop.example/about'
+    ]);
+});
+
+test('llmsLinks ignores a web page served in place of llms.txt', () => {
+    assert.deepStrictEqual(llmsLinks('<!doctype html><html><a href="https://shop.example/">Home</a></html>', 'https://shop.example/llms.txt'), []);
+    assert.deepStrictEqual(llmsLinks('', 'https://shop.example/llms.txt'), []);
 });
 
 test('swapOrigin moves a link onto the site being tested and leaves the rest alone', () => {
