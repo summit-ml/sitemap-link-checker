@@ -58,7 +58,7 @@ nav{display:flex;gap:26px;align-items:center;padding:16px 32px;border-bottom:1px
     await api.run([]);
     if (mode === 'codes') { button('Status code').click(); root.querySelector('.menu input[value="404"]').click(); root.querySelector('.menu input[value="410"]').click(); }
     if (mode === 'search') { var q = root.getElementById('q'); q.value = 'luggage'; q.dispatchEvent(new Event('input')); }
-    wrap.scrollTop = root.getElementById('start').getBoundingClientRect().top + wrap.scrollTop - 12;
+    if (mode === 'codes') { wrap.style.paddingTop = '6px'; wrap.scrollTop = 0; } else { wrap.scrollTop = root.getElementById('start').getBoundingClientRect().top + wrap.scrollTop - 12; }
   }
   // show a neutral address instead of the local one the pages are served from
   var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), node;
@@ -109,7 +109,7 @@ body{width:1400px;height:560px;display:flex;align-items:center;gap:56px;padding-
 .win{flex:none;margin-top:150px}
 </style></head><body><div class="copy"><div class="name"><img src="/icon.svg" width="46" height="46" alt="">Sitemap Link Checker</div>
 <h1>Find every broken link in your sitemap</h1><p>Runs in your browser, on the site you are testing. Nothing is sent anywhere.</p><div class="rule"></div></div>
-${frame('all', 900, 560, 1)}</body></html>`;
+${frame('all', 900, 560, 0.82)}</body></html>`;
 
 http.createServer((req, res) => {
     const url = new URL(req.url, ORIGIN), p = url.pathname;

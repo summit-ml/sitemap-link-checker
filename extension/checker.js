@@ -320,9 +320,32 @@
     }
   }
 
+  /**
+   * The sitemap addresses a robots.txt file declares.
+   * @param {string} text - the contents of robots.txt
+   * @returns {string[]} the addresses on its "Sitemap:" lines, in order
+   */
+  function robotsSitemaps(text) {
+    return (String(text || '').match(/^[ \t]*sitemap[ \t]*:[ \t]*\S+/gim) || []).map(function (line) { return line.replace(/^[ \t]*sitemap[ \t]*:[ \t]*/i, ''); });
+  }
+
+  /**
+   * Chooses the sitemap to suggest from the addresses found for a site.
+   * Only addresses on the site itself can be read; an index is preferred because it leads to the rest.
+   * @param {string[]} list - candidate addresses, absolute or relative
+   * @param {string} origin - the origin of the site being tested
+   * @returns {string} the path (and query) of the chosen sitemap, or '' when none can be used
+   */
+  function pickSitemap(list, origin) {
+    var usable = (list || []).map(function (u) { try { return new URL(u, origin + '/'); } catch (e) { return null; } })
+      .filter(function (u) { return u && u.origin === origin && !/\.gz$/i.test(u.pathname); });
+    var best = usable.filter(function (u) { return /index/i.test(u.pathname); })[0] || usable[0];
+    return best ? best.pathname + best.search : '';
+  }
+
   // Node (tests): expose the pure helpers and stop before any DOM work.
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { classify: classify, sitemapAddress: sitemapAddress, norm: norm, isHome: isHome, visibleText: visibleText, csvCell: csvCell, isLogin: isLogin, canonicalOf: canonicalOf, robotsOf: robotsOf, sameAsNotFound: sameAsNotFound, needsHuman: needsHuman, codeOf: codeOf, sortCodes: sortCodes, codePreview: codePreview, matches: matches, DEFAULT_PHRASES: DEFAULT_PHRASES };
+    module.exports = { classify: classify, sitemapAddress: sitemapAddress, robotsSitemaps: robotsSitemaps, pickSitemap: pickSitemap, norm: norm, isHome: isHome, visibleText: visibleText, csvCell: csvCell, isLogin: isLogin, canonicalOf: canonicalOf, robotsOf: robotsOf, sameAsNotFound: sameAsNotFound, needsHuman: needsHuman, codeOf: codeOf, sortCodes: sortCodes, codePreview: codePreview, matches: matches, DEFAULT_PHRASES: DEFAULT_PHRASES };
     return;
   }
 
@@ -429,6 +452,25 @@
   $('sm').value = DEFAULT_SITEMAP;
   $('phrases').value = DEFAULT_PHRASES.join('\n');
   filesHint(FILES_HINT);
+
+  // Suggest the site's real sitemap instead of the usual guess: first from links on the page, then from
+  // robots.txt, which is where a site declares its sitemaps. Never overrides what the tester typed or loaded.
+  var typed = false;
+  $('sm').addEventListener('input', function () { typed = true; });
+  function suggestSitemap(path, where) {
+    if (!path || typed || files.length) { return; }
+    $('sm').value = path;
+    filesHint('Found this site\'s sitemap ' + where + '. Click Load sitemap to list its files.');
+  }
+  function pageSitemaps() {
+    return Array.prototype.map.call(document.querySelectorAll('link[rel~="sitemap" i][href], a[href]'), function (n) { return n; })
+      .filter(function (n) { try { return n.tagName === 'LINK' || /sitemap[^/]*\.xml$/i.test(new URL(n.href).pathname); } catch (e) { return false; } })
+      .map(function (n) { return n.href; });
+  }
+  suggestSitemap(pickSitemap(pageSitemaps(), location.origin), 'linked on this page');
+  getText(location.origin + '/robots.txt').then(function (got) {
+    if (got.res.ok) { suggestSitemap(pickSitemap(robotsSitemaps(got.text), location.origin), 'in robots.txt'); }
+  }).catch(function () { /* no robots.txt is fine */ });
 
   function setStatus(t) { $('status').textContent = t; }
   function cls(r) { return r.replace(/ /g, '-'); }

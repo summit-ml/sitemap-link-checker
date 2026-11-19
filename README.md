@@ -25,7 +25,7 @@ Prefer not to install anything? Open `bookmarklet/index.html` in your browser an
 
 1. Open the site you want to test. Any page will do.
 2. Click the **Sitemap Link Checker** button in the toolbar. A panel opens over the page.
-3. The sitemap address shows the site you are on, which cannot be changed, followed by the path `/sitemap.xml`. Change the path if your sitemap lives elsewhere, then click **Load sitemap**. If there is no `/sitemap.xml`, the checker tries `/sitemap_index.xml` before giving up.
+3. The sitemap address shows the site you are on, which cannot be changed, followed by a path. The checker fills the path in for you: it looks for a sitemap link on the page, then in the site's `robots.txt`, and otherwise uses `/sitemap.xml`. Change the path if your sitemap lives elsewhere, then click **Load sitemap**. If there is no `/sitemap.xml`, the checker tries `/sitemap_index.xml` before giving up.
 4. Tick the sitemap files to check and click **Check links**.
 5. Filter the results to the problems, and click **Download CSV** to save them.
 

@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { classify, sitemapAddress, norm, isHome, visibleText, csvCell, isLogin, canonicalOf, robotsOf, sameAsNotFound, needsHuman, codeOf, sortCodes, codePreview, matches, DEFAULT_PHRASES } = require('../extension/checker.js');
+const { classify, sitemapAddress, robotsSitemaps, pickSitemap, norm, isHome, visibleText, csvCell, isLogin, canonicalOf, robotsOf, sameAsNotFound, needsHuman, codeOf, sortCodes, codePreview, matches, DEFAULT_PHRASES } = require('../extension/checker.js');
 
 const base = { requestedUrl: 'https://shop.example/luggage/', finalUrl: 'https://shop.example/luggage/', status: 200, redirected: false, title: 'Luggage', heading: 'Luggage', text: 'luggage 20 results ' + 'carry-on and checked bags for every trip. '.repeat(6), phrases: DEFAULT_PHRASES };
 const check = (overrides) => classify(Object.assign({}, base, overrides)).result;
@@ -213,4 +213,18 @@ test('codePreview summarizes the chosen status codes', () => {
     assert.strictEqual(codePreview(['500', '404']), '404, 500');
     assert.strictEqual(codePreview(['200', '404', '503']), '404, 503, 200');
     assert.strictEqual(codePreview(['200', '404', '503', '410', 'No code']), '404, 410 +3');
+});
+
+test('robotsSitemaps reads the Sitemap lines of robots.txt', () => {
+    const text = 'User-agent: *\nDisallow: /cart\n# Sitemap: https://shop.example/old.xml\nSitemap: https://shop.example/sitemap_index.xml\n  sitemap:https://shop.example/news.xml\n';
+    assert.deepStrictEqual(robotsSitemaps(text), ['https://shop.example/sitemap_index.xml', 'https://shop.example/news.xml']);
+    assert.deepStrictEqual(robotsSitemaps('<html><p>Sitemap: none</p></html>'), []);
+});
+
+test('pickSitemap prefers an index on the same site and skips what it cannot read', () => {
+    const origin = 'https://shop.example';
+    assert.strictEqual(pickSitemap(['https://shop.example/news.xml', 'https://shop.example/sitemap_index.xml'], origin), '/sitemap_index.xml');
+    assert.strictEqual(pickSitemap(['https://cdn.example/sitemap.xml', '/maps/sitemap.xml?lang=en'], origin), '/maps/sitemap.xml?lang=en');
+    assert.strictEqual(pickSitemap(['https://shop.example/sitemap.xml.gz', 'https://other.example/sitemap.xml'], origin), '');
+    assert.strictEqual(pickSitemap([], origin), '');
 });
