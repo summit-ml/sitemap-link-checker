@@ -102,8 +102,9 @@ A page that passes those can still get a **Warning**, with the reason in the Not
 - **Marked noindex**, in a robots meta tag or the `X-Robots-Tag` header. A page search engines are told to skip does not belong in a sitemap.
 - **Canonical points elsewhere.** The page names a different path as its canonical address, so the sitemap lists an address the site itself says is not the real one. A canonical on another host with the same path is not reported, since staging sites often point at production.
 - **No title and no main heading.**
-- **Slow.** The page took 3 seconds or more to arrive. Every row shows its response time in the **Time** column.
 - **Almost no text.** Fewer than 150 characters of visible text. On a site drawn by scripts this can mean the checker cannot see the page, not that the page is empty.
+
+Every row shows how long the page took in the **Time** column. A time is highlighted when the page took at least 3 seconds and at least twice as long as the typical page in that run, so a slow server does not light up every row. Slowness never changes a link's result. When most pages in a run take 3 seconds or more, a note above the results says the site as a whole is answering slowly, which points to the server or the environment, not to individual pages.
 
 Warnings are not given to redirects or to files that are not web pages, such as PDFs. The canonical address is included in the CSV.
 
@@ -122,7 +123,7 @@ If the checker misses a page on your site, copy the wording from that page into 
 - **One site at a time.** A browser only lets a page read responses from its own site. Run the checker on the site the sitemap belongs to. Links to other sites are listed as Skipped, unless you choose to check them on the current site.
 - **Redirect type is not reported.** The browser follows redirects itself, so the checker sees that a redirect happened and where it ended, not whether it was a 301 or a 302.
 - **Scripted pages.** The checker reads the HTML the server returns. Content that only appears after scripts run is not seen.
-- **Pace.** Three links are checked at a time, or one at a time with the Gentle pace.
+- **Pace.** Three links are checked at a time. Under **Options**, Gentle checks one at a time and Fast checks six. While a run is going, the status line estimates the time left.
 - **Bot checks are recognized by their wording and markup.** A check the tool does not know looks like an ordinary page. When that happens, the Page title column usually gives it away.
 
 ## Permissions

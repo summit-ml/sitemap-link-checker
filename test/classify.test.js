@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { classify, sitemapAddress, robotsSitemaps, pickSitemap, swapOrigin, otherSites, duration, norm, isHome, visibleText, csvCell, isLogin, canonicalOf, robotsOf, sameAsNotFound, needsHuman, codeOf, sortCodes, codePreview, matches, DEFAULT_PHRASES } = require('../extension/checker.js');
+const { classify, sitemapAddress, robotsSitemaps, pickSitemap, swapOrigin, otherSites, duration, slowLimit, slowSite, timeLeft, norm, isHome, visibleText, csvCell, isLogin, canonicalOf, robotsOf, sameAsNotFound, needsHuman, codeOf, sortCodes, codePreview, matches, DEFAULT_PHRASES } = require('../extension/checker.js');
 
 const base = { requestedUrl: 'https://shop.example/luggage/', finalUrl: 'https://shop.example/luggage/', status: 200, redirected: false, title: 'Luggage', heading: 'Luggage', text: 'luggage 20 results ' + 'carry-on and checked bags for every trip. '.repeat(6), phrases: DEFAULT_PHRASES };
 const check = (overrides) => classify(Object.assign({}, base, overrides)).result;
@@ -242,10 +242,27 @@ test('otherSites counts links on other sites and names the main one', () => {
     assert.deepStrictEqual(otherSites(['https://dev.shop.example/d'], 'https://dev.shop.example'), { count: 0, host: '', hosts: 0 });
 });
 
-test('a slow page is a Warning, and duration reads naturally', () => {
-    assert.match(outcome({ ms: 3400 }).note, /Slow: took 3\.4 s/);
-    assert.strictEqual(check({ ms: 2999 }), 'OK');
-    assert.strictEqual(check({ ms: 9000, status: 404 }), 'Not found');
+test('slowLimit judges a page against the run, with a floor of 3 seconds', () => {
+    assert.strictEqual(slowLimit([200, 300, 400]), 3000);
+    assert.strictEqual(slowLimit([4000, 5000, 6000, '', 5500]), 11000);
+    assert.strictEqual(slowLimit([]), 3000);
+});
+
+test('a slow page is not a Warning by itself', () => {
+    assert.strictEqual(check({ ms: 9000 }), 'OK');
+});
+
+test('duration and timeLeft read naturally', () => {
     assert.strictEqual(duration(420), '420 ms');
     assert.strictEqual(duration(1250), '1.3 s');
+    assert.strictEqual(timeLeft(40000), 'under a minute left');
+    assert.strictEqual(timeLeft(8.4 * 60000), 'about 8 min left');
+});
+
+test('slowSite reports the typical time only when most of a run is slow', () => {
+    const slowRun = [2300, 2900, 3100, 3300, 3300, 3400, 4200, 6100, 6100, 6300, 7200];
+    assert.strictEqual(slowSite(slowRun), 3400);
+    assert.strictEqual(slowSite([200, 250, 300, 300, 320, 350, 400, 420, 9000, 9500]), 0);
+    assert.strictEqual(slowSite([5000, 6000, 7000]), 0);
+    assert.strictEqual(slowSite([]), 0);
 });

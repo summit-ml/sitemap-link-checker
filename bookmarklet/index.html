@@ -98,7 +98,7 @@
   var PAUSE_AFTER = 3;
   // a page with less visible text than this is reported as nearly empty
   var THIN_TEXT = 150;
-  // a page that takes longer than this to arrive is reported as slow
+  // a page is marked slow when it takes at least this long and at least twice as long as the run's typical page
   var SLOW_MS = 3000;
   // wording in a page title or main heading that marks a not-found or error page on any kind of site
   var NOT_FOUND_TITLE = /\b404\b|not found|can(?:no|')t be found|could(?:n't| not) be found|does(?:n't| not) exist|no longer (?:available|exists)|page (?:is )?missing/;
@@ -240,7 +240,6 @@
    * @param {string} [info.canonical] - the canonical address the page names
    * @param {string} [info.robots] - robots instructions from the meta tags and the response header, lower case
    * @param {boolean} [info.isHtml] - false when the response is not a web page (a PDF, a download)
-   * @param {number} [info.ms] - how long the page took to arrive, in milliseconds
    * @param {?Object} [info.notFoundPage] - what the site's not-found page looks like, see sameAsNotFound
    * @returns {{result: string, note: string}} the outcome
    */
@@ -283,7 +282,6 @@
     }
     if (info.title !== undefined && !info.title && !info.heading) { warnings.push('No title and no main heading'); }
     if (text.trim().length < THIN_TEXT) { warnings.push('Almost no text on the page. If scripts draw the page, the checker cannot see it'); }
-    if (info.ms >= SLOW_MS) { warnings.push('Slow: took ' + duration(info.ms)); }
     if (warnings.length) { return { result: 'Warning', note: warnings.join('. ') + '.' }; }
     return { result: 'OK', note: '' };
   }
@@ -319,7 +317,6 @@
         canonical: row.canonical,
         robots: (isHtml ? robotsOf(html) : '') + ',' + (res.headers.get('x-robots-tag') || '').toLowerCase(),
         isHtml: isHtml,
-        ms: row.ms,
         notFoundPage: notFoundPage,
         phrases: phrases
       });
@@ -435,6 +432,37 @@
   function duration(ms) { return ms < 1000 ? Math.round(ms) + ' ms' : (ms / 1000).toFixed(1) + ' s'; }
 
   /**
+   * How long a page must take before it stands out as slow in this run.
+   * Judged against the run's own typical page, so a slow server does not mark every row.
+   * @param {number[]} times - response times of the run so far, in milliseconds
+   * @returns {number} the limit in milliseconds
+   */
+  function slowLimit(times) {
+    var sorted = (times || []).filter(function (t) { return typeof t === 'number'; }).sort(function (a, b) { return a - b; });
+    var median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+    return Math.max(SLOW_MS, median * 2);
+  }
+
+  /**
+   * Whether the site as a whole is answering slowly, as opposed to a few slow pages.
+   * @param {number[]} times - response times of the run so far, in milliseconds
+   * @returns {number} the typical (median) time in milliseconds when most pages are slow, otherwise 0
+   */
+  function slowSite(times) {
+    var sorted = (times || []).filter(function (t) { return typeof t === 'number'; }).sort(function (a, b) { return a - b; });
+    if (sorted.length < 10) { return 0; }
+    var slow = sorted.filter(function (t) { return t >= SLOW_MS; }).length;
+    return slow * 2 > sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+  }
+
+  /**
+   * The time a run still needs, for the progress message.
+   * @param {number} ms - milliseconds remaining
+   * @returns {string} for example "under a minute left" or "about 8 min left"
+   */
+  function timeLeft(ms) { return ms < 60000 ? 'under a minute left' : 'about ' + Math.round(ms / 60000) + ' min left'; }
+
+  /**
    * The sitemap addresses a robots.txt file declares.
    * @param {string} text - the contents of robots.txt
    * @returns {string[]} the addresses on its "Sitemap:" lines, in order
@@ -459,7 +487,7 @@
 
   // Node (tests): expose the pure helpers and stop before any DOM work.
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { classify: classify, sitemapAddress: sitemapAddress, robotsSitemaps: robotsSitemaps, swapOrigin: swapOrigin, otherSites: otherSites, duration: duration, pickSitemap: pickSitemap, norm: norm, isHome: isHome, visibleText: visibleText, csvCell: csvCell, isLogin: isLogin, canonicalOf: canonicalOf, robotsOf: robotsOf, sameAsNotFound: sameAsNotFound, needsHuman: needsHuman, codeOf: codeOf, sortCodes: sortCodes, codePreview: codePreview, matches: matches, DEFAULT_PHRASES: DEFAULT_PHRASES };
+    module.exports = { classify: classify, sitemapAddress: sitemapAddress, robotsSitemaps: robotsSitemaps, swapOrigin: swapOrigin, otherSites: otherSites, duration: duration, slowLimit: slowLimit, slowSite: slowSite, timeLeft: timeLeft, pickSitemap: pickSitemap, norm: norm, isHome: isHome, visibleText: visibleText, csvCell: csvCell, isLogin: isLogin, canonicalOf: canonicalOf, robotsOf: robotsOf, sameAsNotFound: sameAsNotFound, needsHuman: needsHuman, codeOf: codeOf, sortCodes: sortCodes, codePreview: codePreview, matches: matches, DEFAULT_PHRASES: DEFAULT_PHRASES };
     return;
   }
 
@@ -479,6 +507,7 @@
     'label{display:block;font-weight:600;margin:12px 0 4px}',
     '.swap{display:flex;gap:8px;align-items:flex-start;font-weight:400;margin:8px 0 0;padding:9px 12px;border:1px solid #e8c88a;background:#fff8e8;border-radius:8px}',
     'td.slow{color:#b26a00;font-weight:600}',
+    '.info{margin:12px 0 14px;padding:10px 14px;border:1px solid #c9d6e6;background:#f2f6fb;border-radius:8px}',
     '.between{justify-content:space-between;margin-bottom:8px}.sec{font-weight:600}',
     '.help{margin:6px 0 0;color:#5b6875;font-size:13px}.help strong{color:#16202a}',
     '#panePaste textarea{min-height:104px}',
@@ -528,7 +557,7 @@
     'table{border-collapse:collapse;width:100%;font-size:13px}',
     'th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #eef1f4;vertical-align:top}',
     'th{position:sticky;top:0;background:#f6f8fa;font-weight:600;border-bottom-color:#e1e5ea}',
-    'td.u{max-width:420px;word-break:break-all}',
+    'td.u{min-width:230px;max-width:420px;word-break:break-all}th{white-space:nowrap}',
     'a{color:#0b5cad}',
     '.OK{color:#1a7f37;font-weight:600}.Blocked,.Sign-in-needed,.Warning,.Redirect,.Redirect-to-home,.Skipped{color:#b26a00;font-weight:600}.Not-found,.No-results,.Error{color:#c62828;font-weight:600}',
     'details{margin-top:10px}summary{cursor:pointer;font-weight:600}',
@@ -543,8 +572,8 @@
     '<div id="panePaste" hidden><textarea id="paste" aria-label="Links to check, one per line" placeholder="https://…"></textarea><p class="help">One link per line. Only links on this site can be checked.</p></div>',
     '<label class="swap" id="swapRow" hidden><input type="checkbox" id="swap"><span id="swapText"></span></label>',
     '<details class="opts"><summary>Options</summary><div class="optbody">',
-    '<div><label for="pace">Pace</label><select id="pace"><option value="normal">Normal (3 at a time)</option><option value="gentle">Gentle (1 at a time)</option></select>',
-    '<p class="help">Gentle is slower but less likely to set off a bot check.</p>',
+    '<div><label for="pace">Pace</label><select id="pace"><option value="normal">Normal (3 at a time)</option><option value="gentle">Gentle (1 at a time)</option><option value="fast">Fast (6 at a time)</option></select>',
+    '<p class="help">Gentle is slower but less likely to set off a bot check. Fast suits a site that is slow to answer and has no bot check.</p>',
     '<p class="help"><strong>Sign-ins and bot checks.</strong> The checker uses this browser\'s session, so it sees what you see. Sign in, enter the site password, or complete the "press and hold" check in this browser first. It never asks for a password and never stores one. If the site starts blocking part-way through, the run pauses and shows how to carry on.</p></div>',
     '<div><label for="phrases">Messages that mark a broken page</label><textarea id="phrases"></textarea>',
     '<p class="help">One per line. A page whose text contains one of these is reported as Not found, as No results if the phrase contains "no results" or "(0)", or as Error if it contains the word "error".</p></div>',
@@ -552,6 +581,7 @@
     '<div class="row" style="margin-top:14px"><button class="primary" id="start">Check links</button><button id="stop" disabled>Stop</button><button id="csv" disabled>Download CSV</button><button id="again" disabled>Recheck problems</button><span class="muted" id="status" aria-live="polite"></span></div>',
     '<div class="bar"><i id="prog"></i></div>',
     '<div class="gate" id="gate" role="status" hidden></div>',
+    '<div class="info" id="slowNote" role="status" hidden></div>',
     '<div class="row" id="filters"></div>',
     '<div class="results">',
     '<div class="row" id="find" hidden><input class="grow" id="q" type="text" placeholder="Search links, titles and notes" aria-label="Search results"><button id="copy">Copy links</button><span class="muted" id="shown" aria-live="polite"></span></div>',
@@ -652,6 +682,16 @@
       empty.appendChild(cell); body.appendChild(empty);
       return;
     }
+    var times = rows.map(function (r) { return r.ms; }), slow = slowLimit(times), typical = slowSite(times);
+    // a slow server is one finding about the site, not hundreds of findings about its pages
+    $('slowNote').hidden = !typical;
+    if (typical) {
+      $('slowNote').innerHTML = '';
+      var lead = document.createElement('strong'); lead.textContent = 'This site is answering slowly. ';
+      $('slowNote').appendChild(lead);
+      $('slowNote').appendChild(document.createTextNode('Most pages took 3 seconds or more, and the typical page took ' + duration(typical) +
+        '. That points to the server or this environment, not to individual pages, and it does not change any result. Only pages much slower than the rest are highlighted in the Time column.'));
+    }
     list.forEach(function (r) {
       var tr = document.createElement('tr');
       function td(text, klass, link) {
@@ -661,7 +701,7 @@
       }
       td(r.result, 'r ' + cls(r.result));
       td(r.status || '', 's' + (isBad(r.status) ? ' bad' : ''));
-      td(r.ms === '' ? '' : duration(r.ms), 's' + (r.ms >= SLOW_MS ? ' slow' : ''));
+      td(r.ms === '' ? '' : duration(r.ms), 's' + (r.ms >= slow ? ' slow' : ''));
       td(r.url, 'u', r.url);
       var moved = r.finalUrl && norm(r.finalUrl) !== norm(r.url) ? r.finalUrl : '';
       td(moved, 'u', moved);
@@ -805,7 +845,8 @@
     running = true; stopRequested = false; paused = false;
     $('start').disabled = true; $('stop').disabled = false; $('csv').disabled = true; $('pace').disabled = true; $('again').disabled = true;
     renderGate();
-    var gentle = $('pace').value === 'gentle', streak = 0, inflight = 0;
+    var gentle = $('pace').value === 'gentle', streak = 0, inflight = 0, began = Date.now(), done = 0;
+    var atOnce = gentle ? 1 : ($('pace').value === 'fast' ? CONCURRENCY * 2 : CONCURRENCY);
     async function worker() {
       while (pending.length && !stopRequested && !paused) {
         var url = pending.shift(); inflight++;
@@ -816,12 +857,14 @@
         if (streak >= PAUSE_AFTER) { paused = true; }
         var total = rows.length + pending.length + inflight;
         $('prog').style.width = Math.round(rows.length / total * 100) + '%';
-        setStatus('Checked ' + rows.length + ' of ' + total);
+        done++;
+        var left = pending.length + inflight;
+        setStatus('Checked ' + rows.length + ' of ' + total + (done >= 6 && left ? ', ' + timeLeft((Date.now() - began) / done * left) : ''));
         if (rows.length % 5 === 0 || !pending.length) { renderFilters(); renderRows(); }
         if (gentle && pending.length && !stopRequested && !paused) { await sleep(GENTLE_DELAY); }
       }
     }
-    var workers = []; for (var i = 0; i < (gentle ? 1 : CONCURRENCY); i++) { workers.push(worker()); }
+    var workers = []; for (var i = 0; i < atOnce; i++) { workers.push(worker()); }
     await Promise.all(workers);
     var weight = { 'Blocked': -2, 'Sign-in needed': -1, 'Not found': 0, 'No results': 1, 'Error': 2, 'Warning': 2.5, 'Redirect to home': 3, 'Redirect': 4, 'Skipped': 5, 'OK': 6 };
     rows.sort(function (a, b) { return weight[a.result] - weight[b.result]; });
