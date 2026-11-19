@@ -1,5 +1,5 @@
 #!/bin/sh
-# Renders the store listing images into store/. Needs Google Chrome and Node.
+# Renders the store listing images into store/. Needs Google Chrome and Node, and ImageMagick to drop transparency.
 # Usage: sh tools/store-images/build.sh
 set -e
 cd "$(dirname "$0")/../.."
@@ -11,6 +11,8 @@ sleep 1
 shot() { # name width height path
   "$CHROME" --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --window-size="$2,$3" \
     --virtual-time-budget=12000 --screenshot="store/$1.png" "http://localhost:8793$4" >/dev/null 2>&1
+  # the store only takes 24-bit PNGs, so drop the transparency channel Chrome sometimes writes
+  if command -v magick >/dev/null 2>&1; then magick "store/$1.png" -background '#1F1C1F' -alpha remove -alpha off "PNG24:store/$1.png"; fi
   echo "wrote store/$1.png"
 }
 mkdir -p store
