@@ -1,6 +1,10 @@
+<p align="center"><img src="tools/icon.svg" width="96" height="96" alt="Sitemap Link Checker logo"></p>
+
 # Sitemap Link Checker
 
 A browser extension that checks every link in a sitemap and tells you which ones open a real page, which redirect, and which land on a not-found, empty or error page.
+
+![The results panel: every link in the sitemap with its result, status code, page title and the reason](store/screenshot-1-results.png)
 
 It runs inside your browser, on the site you are testing. That means it works on sites a command-line crawler cannot reach: staging sites behind a password, sites behind bot protection, anything you have to be signed in to see.
 
@@ -34,6 +38,17 @@ Three filters sit above the results and work together:
 **Copy links** copies the links currently shown, one per line. **Download CSV** always saves the full run.
 
 You can also paste a list of links, one per line, instead of loading a sitemap.
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Status code filter showing only the 404s](store/screenshot-2-status-codes.png) | ![A run paused by a bot check, with the steps to carry on](store/screenshot-3-sign-in-and-bot-checks.png) |
+| Every status code the run found becomes a filter. | A sign-in or bot check pauses the run; recheck when you are through. |
+| ![Results narrowed by a search for "luggage"](store/screenshot-4-search-and-export.png) | ![A sitemap index with three files ticked](store/screenshot-5-sitemap-files.png) |
+| Search the results, copy the links, or download the CSV. | Check only the sitemap files you need. |
+
+The images are made from a real run against a small made-up store. `npm run store` renders them again.
 
 ## Results
 
@@ -120,6 +135,8 @@ npm run store    # renders the store listing images into store/ (needs Google Ch
 
 - `extension/checker.js` is the whole checker: sitemap loading, link checking, the panel. The decision about each link is one pure function, `classify`, covered by `test/classify.test.js`.
 - `extension/background.js` opens the checker when the toolbar button is clicked.
+- `tools/icon.svg` is the logo. The extension icons are rendered from it.
+- `store/` holds the store listing images, rendered by `tools/store-images/`. `logos/` holds the logo explorations.
 - `bookmarklet/index.html` is generated. Edit `tools/bookmarklet.template.html` and run the build.
 
 After changing `checker.js`, run `npm test` and `npm run build`, then reload the extension on the extensions page.
