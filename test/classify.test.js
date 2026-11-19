@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { classify, norm, isHome, visibleText, csvCell, isLogin, canonicalOf, robotsOf, sameAsNotFound, needsHuman, codeOf, sortCodes, matches, DEFAULT_PHRASES } = require('../extension/checker.js');
+const { classify, sitemapAddress, norm, isHome, visibleText, csvCell, isLogin, canonicalOf, robotsOf, sameAsNotFound, needsHuman, codeOf, sortCodes, codePreview, matches, DEFAULT_PHRASES } = require('../extension/checker.js');
 
 const base = { requestedUrl: 'https://shop.example/luggage/', finalUrl: 'https://shop.example/luggage/', status: 200, redirected: false, title: 'Luggage', heading: 'Luggage', text: 'luggage 20 results ' + 'carry-on and checked bags for every trip. '.repeat(6), phrases: DEFAULT_PHRASES };
 const check = (overrides) => classify(Object.assign({}, base, overrides)).result;
@@ -128,12 +128,12 @@ test('sortCodes puts error codes first and No code last', () => {
 test('matches combines the result, status code and search filters', () => {
     const row = { url: 'https://shop.example/luggage/', finalUrl: 'https://shop.example/luggage/', status: 404, result: 'Not found', title: 'Page Not Found', heading: '', note: 'The site answered 404' };
     assert.ok(matches(row, {}));
-    assert.ok(matches(row, { result: 'All', code: 'All', q: '' }));
-    assert.ok(matches(row, { result: 'Not found', code: '404', q: 'LUGGAGE' }));
+    assert.ok(matches(row, { result: 'All', codes: [], q: '' }));
+    assert.ok(matches(row, { result: 'Not found', codes: ['404'], q: 'LUGGAGE' }));
     assert.ok(!matches(row, { result: 'Error' }));
-    assert.ok(!matches(row, { code: '500' }));
+    assert.ok(!matches(row, { codes: ['500', '503'] }));
     assert.ok(!matches(row, { q: 'handbags' }));
-    assert.ok(matches({ url: 'https://other.example/', status: '', result: 'Skipped', note: '' }, { code: 'No code' }));
+    assert.ok(matches({ url: 'https://other.example/', status: '', result: 'Skipped', note: '' }, { codes: ['404', 'No code'] }));
 });
 
 const long = (text) => text + ' ' + 'more words on the page. '.repeat(10);
@@ -192,4 +192,25 @@ test('robotsOf reads robots and googlebot meta tags only', () => {
     assert.strictEqual(robotsOf('<meta name="robots" content="NOINDEX, follow"><meta name="description" content="noindex">'), 'noindex, follow');
     assert.strictEqual(robotsOf('<meta content="noindex" name=googlebot>'), 'noindex');
     assert.strictEqual(robotsOf('<p>noindex</p>'), '');
+});
+
+test('sitemapAddress keeps the sitemap on the site being tested', () => {
+    const origin = 'https://shop.example';
+    assert.deepStrictEqual(sitemapAddress('/sitemap.xml', origin), { url: 'https://shop.example/sitemap.xml', path: '/sitemap.xml', error: '' });
+    assert.strictEqual(sitemapAddress(' sitemaps/blog.xml ', origin).url, 'https://shop.example/sitemaps/blog.xml');
+    assert.deepStrictEqual(sitemapAddress('https://shop.example/s/brand/sitemap_index.xml?a=1', origin), { url: 'https://shop.example/s/brand/sitemap_index.xml?a=1', path: '/s/brand/sitemap_index.xml?a=1', error: '' });
+    assert.match(sitemapAddress('https://other.example/sitemap.xml', origin).error, /different site \(https:\/\/other\.example\)/);
+    assert.match(sitemapAddress('', origin).error, /Enter the path/);
+});
+
+test('matches accepts several status codes at once', () => {
+    assert.ok(matches({ status: 500, result: 'Error' }, { codes: ['404', '500'] }));
+    assert.ok(!matches({ status: 200, result: 'OK' }, { codes: ['404', '500'] }));
+});
+
+test('codePreview summarizes the chosen status codes', () => {
+    assert.strictEqual(codePreview([]), 'All');
+    assert.strictEqual(codePreview(['500', '404']), '404, 500');
+    assert.strictEqual(codePreview(['200', '404', '503']), '404, 503, 200');
+    assert.strictEqual(codePreview(['200', '404', '503', '410', 'No code']), '404, 410 +3');
 });

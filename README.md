@@ -25,26 +25,28 @@ Prefer not to install anything? Open `bookmarklet/index.html` in your browser an
 
 1. Open the site you want to test. Any page will do.
 2. Click the **Sitemap Link Checker** button in the toolbar. A panel opens over the page.
-3. The sitemap address is filled in (`/sitemap_index.xml` on the current site). Change it if yours lives elsewhere, then click **Load sitemap**.
+3. The sitemap address shows the site you are on, which cannot be changed, followed by the path `/sitemap.xml`. Change the path if your sitemap lives elsewhere, then click **Load sitemap**. If there is no `/sitemap.xml`, the checker tries `/sitemap_index.xml` before giving up.
 4. Tick the sitemap files to check and click **Check links**.
 5. Filter the results to the problems, and click **Download CSV** to save them.
 
 Three filters sit above the results and work together:
 
 - **Result** buttons: Not found, No results, Error and so on, each with a count.
-- **Status code** buttons: one for every HTTP status the run came across (404, 500, 403 and so on), error codes first and in red. Click a code to see only those links; click it again to clear it. Links that never loaded, or were skipped, are under **No code**.
+- **Status code** menu, at the end of the same row: lists every HTTP status the run came across (404, 500, 403 and so on) with a count, error codes first and in red. Tick one or several. The closed menu shows what is chosen, for example "Status code: 404, 500". Links that never loaded, or were skipped, are under **No code**.
 - **Search**: narrows the list to links whose address, title or note contains the text you type.
 
 **Copy links** copies the links currently shown, one per line. **Download CSV** always saves the full run.
 
-You can also paste a list of links, one per line, instead of loading a sitemap.
+To check a list of your own instead, switch **Links to check** to **Pasted list** and paste the links, one per line.
+
+**Options**, under the links, holds the pace and the messages that mark a broken page.
 
 ## Screenshots
 
 | | |
 |---|---|
-| ![Status code filter showing only the 404s](store/screenshot-2-status-codes.png) | ![A run paused by a bot check, with the steps to carry on](store/screenshot-3-sign-in-and-bot-checks.png) |
-| Every status code the run found becomes a filter. | A sign-in or bot check pauses the run; recheck when you are through. |
+| ![Status code menu with 404 and 410 ticked](store/screenshot-2-status-codes.png) | ![A run paused by a bot check, with the steps to carry on](store/screenshot-3-sign-in-and-bot-checks.png) |
+| Every status code the run found is in one menu. | A sign-in or bot check pauses the run; recheck when you are through. |
 | ![Results narrowed by a search for "luggage"](store/screenshot-4-search-and-export.png) | ![A sitemap index with three files ticked](store/screenshot-5-sitemap-files.png) |
 | Search the results, copy the links, or download the CSV. | Check only the sitemap files you need. |
 
@@ -79,7 +81,7 @@ If the site blocks links during a run, they are reported as **Blocked** or **Sig
 
 Only the blocked links are checked again; the other results are kept. After three blocked links in a row the run pauses by itself, so the site is not hit with requests it will only refuse. The recheck button then also carries on with the links that were left.
 
-If the site blocks you again, set **Pace** to **Gentle**. It checks one link at a time with a short wait between links, which bot protection is less likely to object to.
+If the site blocks you again, set **Pace** to **Gentle** under **Options**. It checks one link at a time with a short wait between links, which bot protection is less likely to object to.
 
 ### Checks that work on any kind of site
 
@@ -99,7 +101,7 @@ Warnings are not given to redirects or to files that are not web pages, such as 
 
 ### Pages that load but say "not found"
 
-Many sites answer `200 OK` for a page that only says "we can't find that". The checker catches these by looking for phrases in the page's visible text. The list is in the panel under **Not-found and error messages to look for**, one phrase per line:
+Many sites answer `200 OK` for a page that only says "we can't find that". The checker catches these by looking for phrases in the page's visible text. The list is in the panel under **Options**, as **Messages that mark a broken page**, one phrase per line:
 
 - a phrase containing `no results` or `(0)` reports the page as **No results**
 - a phrase containing `error` reports it as **Error**

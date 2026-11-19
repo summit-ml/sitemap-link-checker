@@ -56,20 +56,19 @@ nav{display:flex;gap:26px;align-items:center;padding:16px 32px;border-bottom:1px
   function button(text) { return Array.prototype.filter.call(root.querySelectorAll('button'), function (b) { return b.textContent.indexOf(text) === 0; })[0]; }
   if (mode !== 'files') {
     await api.run([]);
-    if (mode === 'codes') { button('404').click(); }
+    if (mode === 'codes') { button('Status code').click(); root.querySelector('.menu input[value="404"]').click(); root.querySelector('.menu input[value="410"]').click(); }
     if (mode === 'search') { var q = root.getElementById('q'); q.value = 'luggage'; q.dispatchEvent(new Event('input')); }
     wrap.scrollTop = root.getElementById('start').getBoundingClientRect().top + wrap.scrollTop - 12;
   }
   // show a neutral address instead of the local one the pages are served from
   var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), node;
   while ((node = walker.nextNode())) { node.nodeValue = node.nodeValue.split('${ORIGIN}').join('${SHOWN}'); }
-  root.getElementById('sm').value = root.getElementById('sm').value.replace('${ORIGIN}', '${SHOWN}');
 }());
 </script></body></html>`;
 
 const slides = {
     1: ['Check every link in your sitemap', 'Real page, redirect, not found, empty or error: every link gets a verdict.', 'all'],
-    2: ['Jump straight to the error codes', 'Every status code the run found becomes a filter. One click shows the 404s.', 'codes'],
+    2: ['Jump straight to the error codes', 'Every status code the run found is in one menu. Tick the ones you want to see.', 'codes'],
     3: ['Works behind sign-ins and bot checks', 'It runs in your browser, as you. If the site pushes back, it pauses and picks up where it left off.', 'gate'],
     4: ['Search, copy, export', 'Narrow the list as you type, copy the links, or download everything as CSV.', 'search'],
     5: ['Pick the sitemap files that matter', 'Load a sitemap index, see what is in it, and check only the files you need.', 'files']
@@ -121,7 +120,7 @@ http.createServer((req, res) => {
     if (p === '/slide') { return send(200, 'text/html', slide(+url.searchParams.get('n') || 1)); }
     if (p === '/promo') { return send(200, 'text/html', promo); }
     if (p === '/marquee') { return send(200, 'text/html', marquee); }
-    if (p === '/sitemap_index.xml') {
+    if (p === '/sitemap.xml') {
         return send(200, 'application/xml', '<?xml version="1.0"?><sitemapindex>' + Object.keys(sitemaps).map((f) => `<sitemap><loc>${ORIGIN}/${f}</loc></sitemap>`).join('') + '</sitemapindex>');
     }
     if (sitemaps[p.slice(1)]) {

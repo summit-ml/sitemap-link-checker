@@ -43,9 +43,30 @@
   var BLOCK_HTML = ['px-captcha', 'captcha-delivery.com', 'challenge-error-text'];
 
   // ---------- helpers
-  function siteRoot() {
+  // the part of the path every page of the site shares ('' on most sites)
+  function sitePrefix() {
     var m = location.pathname.match(/^\/s\/[^/]+/);
-    return location.origin + (m ? m[0] : '');
+    return m ? m[0] : '';
+  }
+  function siteRoot() { return location.origin + sitePrefix(); }
+
+  /**
+   * Turns what was typed in the sitemap field into an address on the current site.
+   * @param {string} value - a path such as "/sitemap.xml", or a full address pasted in
+   * @param {string} origin - the origin of the site being tested, for example "https://shop.example"
+   * @returns {{url: string, path: string, error: string}} the address to load and the path to show, or an error
+   */
+  function sitemapAddress(value, origin) {
+    var v = String(value || '').trim();
+    if (!v) { return { url: '', path: '', error: 'Enter the path of a sitemap, for example /sitemap.xml' }; }
+    if (/^https?:\/\//i.test(v)) {
+      var full;
+      try { full = new URL(v); } catch (e) { return { url: '', path: v, error: 'That is not a valid address.' }; }
+      if (full.origin !== origin) { return { url: '', path: v, error: 'That sitemap is on a different site (' + full.origin + '). Open that site and run the checker there.' }; }
+      v = full.pathname + full.search;
+    }
+    if (v.charAt(0) !== '/') { v = '/' + v; }
+    return { url: origin + v, path: v, error: '' };
   }
   function norm(u) {
     try { var x = new URL(u, typeof location !== 'undefined' ? location.href : undefined); return (x.origin + decodeURI(x.pathname).replace(/\/+$/, '')).toLowerCase(); } catch (e) { return String(u).toLowerCase(); }
@@ -253,17 +274,28 @@
   }
 
   /**
+   * The short summary of the chosen status codes shown on the closed status code menu.
+   * @param {string[]} codes - the chosen status codes as text
+   * @returns {string} "All", the codes themselves, or the first two and a count of the rest
+   */
+  function codePreview(codes) {
+    var list = sortCodes(codes || []);
+    if (!list.length) { return 'All'; }
+    return list.length <= 3 ? list.join(', ') : list.slice(0, 2).join(', ') + ' +' + (list.length - 2);
+  }
+
+  /**
    * Whether a row passes the filters in the panel. Pure: no DOM.
    * @param {Object} row - a result row
    * @param {Object} f
    * @param {string} [f.result] - a result name, or "All"
-   * @param {string} [f.code] - a status code as text, "No code", or "All"
+   * @param {string[]} [f.codes] - status codes as text ("No code" included); empty means every code
    * @param {string} [f.q] - text to find in the link, final address, title, heading or note
    * @returns {boolean} true when the row should be shown
    */
   function matches(row, f) {
     if (f.result && f.result !== 'All' && row.result !== f.result) { return false; }
-    if (f.code && f.code !== 'All' && codeOf(row) !== f.code) { return false; }
+    if (f.codes && f.codes.length && f.codes.indexOf(codeOf(row)) === -1) { return false; }
     var q = (f.q || '').trim().toLowerCase();
     if (q && [row.url, row.finalUrl, row.title, row.heading, row.note].join(' ').toLowerCase().indexOf(q) === -1) { return false; }
     return true;
@@ -290,7 +322,7 @@
 
   // Node (tests): expose the pure helpers and stop before any DOM work.
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { classify: classify, norm: norm, isHome: isHome, visibleText: visibleText, csvCell: csvCell, isLogin: isLogin, canonicalOf: canonicalOf, robotsOf: robotsOf, sameAsNotFound: sameAsNotFound, needsHuman: needsHuman, codeOf: codeOf, sortCodes: sortCodes, matches: matches, DEFAULT_PHRASES: DEFAULT_PHRASES };
+    module.exports = { classify: classify, sitemapAddress: sitemapAddress, norm: norm, isHome: isHome, visibleText: visibleText, csvCell: csvCell, isLogin: isLogin, canonicalOf: canonicalOf, robotsOf: robotsOf, sameAsNotFound: sameAsNotFound, needsHuman: needsHuman, codeOf: codeOf, sortCodes: sortCodes, codePreview: codePreview, matches: matches, DEFAULT_PHRASES: DEFAULT_PHRASES };
     return;
   }
 
@@ -304,22 +336,42 @@
     '*{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}',
     '.wrap{position:fixed;inset:0;background:rgba(10,16,22,.55);display:flex;justify-content:center;align-items:flex-start;padding:24px 16px;overflow:auto}',
     '.panel{background:#fff;color:#16202a;width:min(1180px,100%);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.35);padding:20px 22px 24px;font-size:14px;line-height:1.45}',
-    'h2{font-size:20px;margin:0}',
+    'h2{font-size:17px;margin:0;display:flex;align-items:center;gap:10px}',
+    'h2 svg{flex:none;border-radius:22%}',
     '.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}',
     'label{display:block;font-weight:600;margin:12px 0 4px}',
-    'label.inline{display:inline;margin:0 0 0 8px}',
+    '.between{justify-content:space-between;margin-bottom:8px}.sec{font-weight:600}',
+    '.help{margin:6px 0 0;color:#5b6875;font-size:13px}.help strong{color:#16202a}',
+    '#panePaste textarea{min-height:104px}',
+    '.opts{margin-top:12px;border:1px solid #e1e5ea;border-radius:8px}.opts summary{padding:9px 12px}',
+    '.optbody{display:grid;grid-template-columns:minmax(220px,1fr) minmax(260px,1.4fr);gap:8px 24px;padding:0 12px 14px;border-top:1px solid #eef1f4}',
+    '.optbody textarea{min-height:120px}',
+    '@media (max-width:720px){.optbody{grid-template-columns:1fr}}',
     'select{font:inherit;padding:7px 8px;border:1px solid #c4ccd4;border-radius:8px;color:#16202a;background:#fff}',
     '.gate{margin:12px 0 14px;padding:12px 14px;border:1px solid #e8c88a;background:#fff8e8;border-radius:8px}',
     '.gate ol{margin:6px 0 10px;padding-left:20px}.gate li{margin:2px 0;word-break:break-word}',
+    '.addr{display:flex;align-items:stretch;border:1px solid #c4ccd4;border-radius:8px;overflow:hidden;background:#fff}',
+    '.addr:focus-within{outline:2px solid #0b5cad;outline-offset:1px}',
+    '.addr span{display:flex;align-items:center;padding:0 10px;background:#f1f4f7;color:#5b6875;border-right:1px solid #c4ccd4;white-space:nowrap;max-width:60%;overflow:hidden;text-overflow:ellipsis}',
+    '.addr input[type=text]{border:0;border-radius:0;flex:1;min-width:140px;outline:0}',
     'input[type=text],textarea{width:100%;font:inherit;padding:8px 10px;border:1px solid #c4ccd4;border-radius:8px;color:#16202a;background:#fff}',
     'textarea{min-height:72px;resize:vertical}',
     'button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid #c4ccd4;background:#fff;color:#16202a;cursor:pointer}',
     'button.primary{background:#0b5cad;border-color:#0b5cad;color:#fff;font-weight:600}',
     'button:disabled{opacity:.5;cursor:default}',
     'button.on{background:#16202a;border-color:#16202a;color:#fff}',
-    'button.code{padding:4px 11px;border-radius:999px;font-size:13px;font-variant-numeric:tabular-nums}',
-    'button.bad:not(.on){color:#c62828;border-color:#e3b1b1}',
-    '#codes,#find{margin-top:8px}',
+    '.seg{display:inline-flex;flex-wrap:wrap;border:1px solid #c4ccd4;border-radius:8px;overflow:hidden;background:#fff}',
+    '.seg button{border:0;border-radius:0;box-shadow:1px 0 0 #e1e5ea,0 1px 0 #e1e5ea}',
+    '.seg button:focus-visible{outline-offset:-2px}',
+    '.dd{position:relative;margin-left:auto}',
+    '.dd>button{font-variant-numeric:tabular-nums}',
+    '.menu{position:absolute;right:0;top:calc(100% + 4px);z-index:5;min-width:200px;max-height:280px;overflow:auto;background:#fff;border:1px solid #c4ccd4;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:6px}',
+    '.menu label{display:flex;gap:8px;align-items:center;font-weight:400;margin:0;padding:5px 8px;border-radius:6px;cursor:pointer;font-variant-numeric:tabular-nums}',
+    '.menu label:hover{background:#f1f4f7}.menu label.bad{color:#c62828}',
+    '.menu button{width:100%;margin-top:4px;padding:5px 8px;font-size:13px}',
+    '.results{margin-top:12px;border:1px solid #e1e5ea;border-radius:8px;overflow:hidden}',
+    '#find{padding:8px;background:#f6f8fa;border-bottom:1px solid #e1e5ea}',
+    '#find input[type=text]{padding:6px 10px}#find button{padding:6px 12px}#shown{padding:0 4px}',
     '[hidden]{display:none!important}',
     'td.r{white-space:nowrap}',
     '.by{margin-top:10px;text-align:right;font-size:11px;color:#a9b2bc}.by a{color:inherit;text-decoration:none}.by a:hover{color:#5b6875;text-decoration:underline}',
@@ -329,42 +381,54 @@
     '.grow{flex:1 1 320px}',
     '.muted{color:#5b6875}',
     '.files{margin:8px 0;max-height:150px;overflow:auto;border:1px solid #e1e5ea;border-radius:8px;padding:8px 10px}',
+    '.files.hint{color:#5b6875;background:#f8f9fb;border-style:dashed;padding:12px}',
     '.files label{font-weight:400;margin:2px 0;display:flex;gap:8px;align-items:center}',
     '.bar{height:8px;background:#e9edf1;border-radius:4px;overflow:hidden;margin:10px 0 6px}',
     '.bar i{display:block;height:100%;width:0;background:#0b5cad}',
-    '.scroll{overflow:auto;max-height:52vh;border:1px solid #e1e5ea;border-radius:8px;margin-top:10px}',
+    '.scroll{overflow:auto;max-height:52vh}',
     'table{border-collapse:collapse;width:100%;font-size:13px}',
     'th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #eef1f4;vertical-align:top}',
-    'th{position:sticky;top:0;background:#f6f8fa;font-weight:600}',
+    'th{position:sticky;top:0;background:#f6f8fa;font-weight:600;border-bottom-color:#e1e5ea}',
     'td.u{max-width:420px;word-break:break-all}',
     'a{color:#0b5cad}',
     '.OK{color:#1a7f37;font-weight:600}.Blocked,.Sign-in-needed,.Warning,.Redirect,.Redirect-to-home,.Skipped{color:#b26a00;font-weight:600}.Not-found,.No-results,.Error{color:#c62828;font-weight:600}',
     'details{margin-top:10px}summary{cursor:pointer;font-weight:600}',
     '</style>',
     '<div class="wrap"><div class="panel" role="dialog" aria-label="Sitemap Link Checker">',
-    '<div class="top"><h2>Sitemap Link Checker</h2><button id="close" aria-label="Close">Close</button></div>',
-    '<label for="sm">Sitemap address</label>',
-    '<div class="row"><input class="grow" id="sm" type="text"><button id="load">Load sitemap</button></div>',
+    '<div class="top"><h2><svg viewBox="0 0 128 128" width="28" height="28" aria-hidden="true"><rect width="128" height="128" rx="28" fill="#F0EFEB"/><path d="M33.58,37.93l-23.9,26.07,23.9,26.07M94.42,37.93l23.9,26.07-23.9,26.07" stroke="#1F1C1F" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M45.56,53.56l19.76,19.76,35.91-44.9" stroke="#C42D82" stroke-width="15" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Sitemap Link Checker</h2><button id="close" aria-label="Close">Close</button></div>',
+    '<div class="row between"><span class="sec">Links to check</span><div class="seg" role="group" aria-label="Where the links come from"><button id="srcMap" class="on" aria-pressed="true">From a sitemap</button><button id="srcPaste" aria-pressed="false">Pasted list</button></div></div>',
+    '<div id="paneMap">',
+    '<div class="row"><div class="addr grow"><span id="site" title="The checker can only read sitemaps on the site it is opened on"></span><input id="sm" type="text" aria-label="Sitemap address" aria-describedby="site" spellcheck="false"></div><button id="load">Load sitemap</button></div>',
     '<div id="files"></div>',
-    '<details><summary>Or paste links, one per line</summary><textarea id="paste" placeholder="https://..."></textarea></details>',
-    '<details><summary>Not-found and error messages to look for</summary><p class="muted" style="margin:6px 0">One per line. A page whose text contains one of these is reported as Not found, as No results if the phrase contains "no results" or "(0)", or as Error if it contains the word "error".</p><textarea id="phrases"></textarea></details>',
-    '<details><summary>Site behind a sign-in or a bot check?</summary><p class="muted" style="margin:6px 0">The checker uses this browser\'s session, so it sees what you see. Sign in, enter the site password, or complete the "press and hold" check in this browser first, then check the links. The checker never asks for a password and never stores one. If the site starts blocking part-way through, the run pauses and shows how to carry on. Choosing the Gentle pace makes a bot check less likely.</p></details>',
-    '<div class="row" style="margin-top:14px"><button class="primary" id="start">Check links</button><button id="stop" disabled>Stop</button><button id="csv" disabled>Download CSV</button><label class="inline" for="pace">Pace</label><select id="pace"><option value="normal">Normal (3 at a time)</option><option value="gentle">Gentle (1 at a time)</option></select><span class="muted" id="status" aria-live="polite"></span></div>',
+    '</div>',
+    '<div id="panePaste" hidden><textarea id="paste" aria-label="Links to check, one per line" placeholder="https://…"></textarea><p class="help">One link per line. Only links on this site can be checked.</p></div>',
+    '<details class="opts"><summary>Options</summary><div class="optbody">',
+    '<div><label for="pace">Pace</label><select id="pace"><option value="normal">Normal (3 at a time)</option><option value="gentle">Gentle (1 at a time)</option></select>',
+    '<p class="help">Gentle is slower but less likely to set off a bot check.</p>',
+    '<p class="help"><strong>Sign-ins and bot checks.</strong> The checker uses this browser\'s session, so it sees what you see. Sign in, enter the site password, or complete the "press and hold" check in this browser first. It never asks for a password and never stores one. If the site starts blocking part-way through, the run pauses and shows how to carry on.</p></div>',
+    '<div><label for="phrases">Messages that mark a broken page</label><textarea id="phrases"></textarea>',
+    '<p class="help">One per line. A page whose text contains one of these is reported as Not found, as No results if the phrase contains "no results" or "(0)", or as Error if it contains the word "error".</p></div>',
+    '</div></details>',
+    '<div class="row" style="margin-top:14px"><button class="primary" id="start">Check links</button><button id="stop" disabled>Stop</button><button id="csv" disabled>Download CSV</button><span class="muted" id="status" aria-live="polite"></span></div>',
     '<div class="bar"><i id="prog"></i></div>',
     '<div class="gate" id="gate" role="status" hidden></div>',
     '<div class="row" id="filters"></div>',
-    '<div class="row" id="codes"></div>',
+    '<div class="results">',
     '<div class="row" id="find" hidden><input class="grow" id="q" type="text" placeholder="Search links, titles and notes" aria-label="Search results"><button id="copy">Copy links</button><span class="muted" id="shown" aria-live="polite"></span></div>',
-    '<div class="scroll"><table><thead><tr><th>Result</th><th>Status</th><th>Link</th><th>Went to</th><th>Page title</th><th>Note</th></tr></thead><tbody id="rows"></tbody></table></div>',
+    '<div class="scroll"><table><thead><tr><th>Result</th><th>Status</th><th>Link</th><th>Went to</th><th>Page title</th><th>Note</th></tr></thead><tbody id="rows"></tbody></table></div></div>',
     '<div class="by">Powered by <a href="https://summitml.com" target="_blank" rel="noopener">Summit ML</a></div>',
     '</div></div>'
   ].join('');
   document.documentElement.appendChild(host);
 
   var $ = function (id) { return root.getElementById(id); };
-  var rows = [], filter = 'All', codeFilter = 'All', running = false, stopRequested = false, paused = false, files = [], pending = [], phrases = [], lastGated = null, notFoundPage = null;
-  $('sm').value = siteRoot() + '/sitemap_index.xml';
+  var rows = [], filter = 'All', codeSet = [], codesOpen = false, running = false, stopRequested = false, paused = false, files = [], pending = [], phrases = [], source = 'map', lastGated = null, notFoundPage = null;
+  var DEFAULT_SITEMAP = sitePrefix() + '/sitemap.xml', OTHER_SITEMAP = sitePrefix() + '/sitemap_index.xml';
+  var FILES_HINT = 'No sitemap loaded yet. Click Load sitemap and the sitemap files found at that address will be listed here, ready to tick.';
+  $('site').textContent = location.origin;
+  $('sm').value = DEFAULT_SITEMAP;
   $('phrases').value = DEFAULT_PHRASES.join('\n');
+  filesHint(FILES_HINT);
 
   function setStatus(t) { $('status').textContent = t; }
   function cls(r) { return r.replace(/ /g, '-'); }
@@ -383,25 +447,39 @@
     rows.forEach(function (r) { counts[r.result] = (counts[r.result] || 0) + 1; codes[codeOf(r)] = (codes[codeOf(r)] || 0) + 1; });
     var order = ['All', 'Blocked', 'Sign-in needed', 'Not found', 'No results', 'Error', 'Warning', 'Redirect to home', 'Redirect', 'Skipped', 'OK'];
     $('filters').innerHTML = '';
+    var group = document.createElement('div'); group.className = 'seg'; group.setAttribute('role', 'group'); group.setAttribute('aria-label', 'Filter by result');
+    $('filters').appendChild(group);
     order.forEach(function (name) {
       if (name !== 'All' && !counts[name]) { return; }
-      filterButton($('filters'), name + ' (' + (counts[name] || 0) + ')', name === filter, '', function () { filter = name; });
+      filterButton(group, name + ' (' + (counts[name] || 0) + ')', name === filter, '', function () { filter = name; });
     });
 
-    // status codes pulled out of the results, error codes first
-    var box = $('codes'); box.innerHTML = '';
+    // status codes pulled out of the results: a menu to tick one or several, error codes first
     $('find').hidden = !rows.length;
     if (!rows.length) { return; }
-    if (codeFilter !== 'All' && !codes[codeFilter]) { codeFilter = 'All'; }
-    var label = document.createElement('span'); label.className = 'muted'; label.textContent = 'Status code:';
-    box.appendChild(label);
-    filterButton(box, 'All codes', codeFilter === 'All', 'code', function () { codeFilter = 'All'; });
+    codeSet = codeSet.filter(function (c) { return codes[c]; });
+    var dd = document.createElement('div'); dd.className = 'dd'; $('filters').appendChild(dd);
+    filterButton(dd, 'Status code: ' + codePreview(codeSet) + ' \u25BE', codeSet.length > 0, '', function () { codesOpen = !codesOpen; });
+    dd.firstChild.setAttribute('aria-haspopup', 'true'); dd.firstChild.setAttribute('aria-expanded', codesOpen ? 'true' : 'false');
+    dd.firstChild.removeAttribute('aria-pressed');
+    if (!codesOpen) { return; }
+    var menu = document.createElement('div'); menu.className = 'menu'; menu.setAttribute('role', 'group'); menu.setAttribute('aria-label', 'Status codes'); dd.appendChild(menu);
     sortCodes(Object.keys(codes)).forEach(function (code) {
-      filterButton(box, code + ' (' + codes[code] + ')', code === codeFilter, 'code' + (isBad(code) ? ' bad' : ''), function () { codeFilter = code === codeFilter ? 'All' : code; });
+      var label = document.createElement('label'), box = document.createElement('input');
+      if (isBad(code)) { label.className = 'bad'; }
+      box.type = 'checkbox'; box.value = code; box.checked = codeSet.indexOf(code) > -1;
+      box.addEventListener('change', function () {
+        codeSet = box.checked ? codeSet.concat(code) : codeSet.filter(function (c) { return c !== code; });
+        renderFilters(); renderRows();
+        var again = root.querySelector('.menu input[value="' + code + '"]'); if (again) { again.focus(); }
+      });
+      label.appendChild(box); label.appendChild(document.createTextNode(code + ' (' + codes[code] + ')'));
+      menu.appendChild(label);
     });
+    if (codeSet.length) { filterButton(menu, 'Show all codes', false, '', function () { codeSet = []; }); }
   }
   function visibleRows() {
-    var f = { result: filter, code: codeFilter, q: $('q').value };
+    var f = { result: filter, codes: codeSet, q: $('q').value };
     return rows.filter(function (r) { return matches(r, f); });
   }
   function renderRows() {
@@ -441,18 +519,35 @@
     }
   }
 
+  // the box where sitemap files are listed; before a sitemap is loaded it says what will appear there
+  function filesHint(text) {
+    var box = document.createElement('div'); box.className = 'files hint'; box.textContent = text;
+    $('files').innerHTML = ''; $('files').appendChild(box);
+  }
   async function loadSitemap() {
-    var url = $('sm').value.trim(); files = []; $('files').innerHTML = '';
-    if (!url) { return; }
+    await readSitemap();
+    if (!files.length) { filesHint(FILES_HINT); }
+  }
+  async function readSitemap() {
+    var address = sitemapAddress($('sm').value, location.origin), url = address.url; files = [];
+    if (address.error) { setStatus(address.error); return; }
+    $('sm').value = address.path;
+    filesHint('Looking for sitemap files…');
     setStatus('Loading sitemap…');
     try {
       var got = await getText(url);
+      // many sites keep an index at the other common name; try it before giving up on the default
+      if (address.path === DEFAULT_SITEMAP && (got.res.status === 404 || (got.res.ok && !locs(got.text).list.length))) {
+        var other = await getText(location.origin + OTHER_SITEMAP);
+        if (other.res.ok && locs(other.text).list.length) { got = other; url = location.origin + OTHER_SITEMAP; $('sm').value = OTHER_SITEMAP; }
+      }
       if (!got.res.ok) {
         var gate = got.res.status === 401 || got.res.status === 403 || got.res.status === 429;
         setStatus('Could not load the sitemap (' + got.res.status + ').' + (gate ? ' The site wants a sign-in or a bot check. Open the sitemap address in a new tab, get through it there, then load again.' : ''));
         return;
       }
       var parsed = locs(got.text);
+      if (!parsed.list.length) { setStatus('No links found at that address. Check that it is a sitemap.'); return; }
       if (parsed.isIndex) {
         for (var i = 0; i < parsed.list.length; i++) {
           var child = parsed.list[i], count = '?', links = [];
@@ -476,17 +571,28 @@
         l.appendChild(cb); l.appendChild(document.createTextNode(f.url.split('/').pop() + '  (' + f.count + ' links)'));
         box.appendChild(l);
       });
-      $('files').appendChild(box);
+      $('files').innerHTML = ''; $('files').appendChild(box);
       setStatus(files.length + ' sitemap file' + (files.length === 1 ? '' : 's') + ' found. Tick the ones to check.');
     } catch (e) {
       setStatus('Could not load the sitemap: ' + (e && e.message ? e.message : e));
     }
   }
 
+  // links come from one place at a time: the ticked sitemap files, or the pasted list
+  function setSource(name) {
+    source = name;
+    $('paneMap').hidden = name !== 'map'; $('panePaste').hidden = name !== 'paste';
+    [['srcMap', 'map'], ['srcPaste', 'paste']].forEach(function (pair) {
+      $(pair[0]).className = pair[1] === name ? 'on' : ''; $(pair[0]).setAttribute('aria-pressed', pair[1] === name ? 'true' : 'false');
+    });
+  }
   function collectLinks() {
     var list = [];
-    Array.prototype.forEach.call(root.querySelectorAll('.files input:checked'), function (cb) { list = list.concat(files[+cb.dataset.i].links); });
-    $('paste').value.split(/\s+/).forEach(function (u) { if (/^https?:\/\//i.test(u)) { list.push(u); } });
+    if (source === 'map') {
+      Array.prototype.forEach.call(root.querySelectorAll('.files input:checked'), function (cb) { list = list.concat(files[+cb.dataset.i].links); });
+    } else {
+      $('paste').value.split(/\s+/).forEach(function (u) { if (/^https?:\/\//i.test(u)) { list.push(u); } });
+    }
     var seen = {};
     return list.filter(function (u) { if (seen[u]) { return false; } seen[u] = 1; return true; });
   }
@@ -514,7 +620,7 @@
     var again = el('button', 'Recheck ' + plural(list.length, 'blocked link') + (pending.length ? ' and continue' : ''));
     again.className = 'primary';
     again.addEventListener('click', recheck);
-    el('span', '  Blocked again? Set Pace to Gentle and recheck.').className = 'muted';
+    el('span', '  Blocked again? Set Pace to Gentle under Options and recheck.').className = 'muted';
   }
 
   async function runQueue() {
@@ -551,9 +657,9 @@
   async function start() {
     if (running) { return; }
     var links = collectLinks();
-    if (!links.length) { setStatus('Nothing to check. Load a sitemap and tick a file, or paste some links.'); return; }
+    if (!links.length) { setStatus(source === 'map' ? 'Nothing to check. Load a sitemap and tick a file first.' : 'Nothing to check. Paste some links first.'); return; }
     phrases = $('phrases').value.split('\n').map(function (p) { return p.trim().toLowerCase(); }).filter(Boolean);
-    rows = []; pending = links; filter = 'All'; codeFilter = 'All'; $('q').value = '';
+    rows = []; pending = links; filter = 'All'; codeSet = []; codesOpen = false; $('q').value = '';
     running = true; $('start').disabled = true; renderFilters(); renderRows(); renderGate();
     setStatus('Checking how this site answers for a page that does not exist…');
     notFoundPage = await learnNotFoundPage();
@@ -585,17 +691,23 @@
   }
 
   $('load').addEventListener('click', loadSitemap);
+  $('srcMap').addEventListener('click', function () { setSource('map'); });
+  $('srcPaste').addEventListener('click', function () { setSource('paste'); });
+  $('sm').addEventListener('keydown', function (e) { if (e.key === 'Enter') { loadSitemap(); } });
   $('start').addEventListener('click', start);
   $('stop').addEventListener('click', function () { stopRequested = true; setStatus('Stopping…'); });
   $('csv').addEventListener('click', downloadCsv);
   $('copy').addEventListener('click', copyLinks);
+  // the status code menu closes on a click anywhere else, or on Escape
+  root.addEventListener('click', function (e) { if (codesOpen && !(e.target.closest && e.target.closest('.dd'))) { codesOpen = false; renderFilters(); } });
+  root.addEventListener('keydown', function (e) { if (codesOpen && e.key === 'Escape') { codesOpen = false; renderFilters(); var b = root.querySelector('.dd>button'); if (b) { b.focus(); } } });
   $('q').addEventListener('input', renderRows);
   $('close').addEventListener('click', function () { host.style.display = 'none'; });
 
   window.__sitemapLinkChecker = {
     show: function () { host.style.display = ''; },
     // for scripted use: resolves with the result rows
-    run: async function (links) { $('paste').value = (links || []).join('\n'); await start(); return rows; },
+    run: async function (links) { if (links && links.length) { $('paste').value = links.join('\n'); setSource('paste'); } await start(); return rows; },
     load: loadSitemap,
     recheck: async function () { await recheck(); return rows; },
     rows: function () { return rows; }
