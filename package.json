@@ -1,6 +1,6 @@
 {
     "name": "sitemap-link-checker",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "description": "Browser extension that checks every link in a sitemap from the site you are on.",
     "private": true,
     "license": "MIT",
@@ -8,6 +8,7 @@
         "test": "node --test test/*.test.js",
         "build": "node tools/build-bookmarklet.js",
         "icons": "python3 tools/make-icons.py",
-        "store": "sh tools/store-images/build.sh"
+        "store": "sh tools/store-images/build.sh",
+        "package": "node tools/package.js"
     }
 }

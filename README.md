@@ -29,6 +29,10 @@ Prefer not to install anything? Open `bookmarklet/index.html` in your browser an
 4. Tick the sitemap files to check and click **Check links**.
 5. Filter the results to the problems, and click **Download CSV** to save them.
 
+To check a list of your own instead, switch **Links to check** to **Pasted list** and paste the links, one per line.
+
+**Options**, under the links, holds the pace and the messages that mark a broken page.
+
 Three filters sit above the results and work together:
 
 - **Result** buttons: Not found, No results, Error and so on, each with a count.
@@ -37,16 +41,11 @@ Three filters sit above the results and work together:
 
 **Copy links** copies the links currently shown, one per line. **Download CSV** always saves the full run.
 
-After a fix, **Recheck problems** checks again only the links that were not OK and keeps the rest of the results.
+After a fix, **Recheck problems** checks again only the links that were not OK (skipped links aside) and keeps the rest of the results.
 
 ### Checking a production sitemap on a staging site
 
 A staging or development site often serves a sitemap whose links point at the live site. The checker can only read the site it is opened on, so those links would all be Skipped. When it finds links on another site, a notice under the sitemap offers to **check them on this site instead, at the same paths**. It is ticked for you when most of the links are elsewhere. The table then shows the address that was checked, and the CSV keeps the address the sitemap listed in a **Listed as** column.
-
-
-To check a list of your own instead, switch **Links to check** to **Pasted list** and paste the links, one per line.
-
-**Options**, under the links, holds the pace and the messages that mark a broken page.
 
 ## Screenshots
 
@@ -74,7 +73,7 @@ The images are made from a real run against a small made-up store. `npm run stor
 | Warning | The page loaded, but something says it should not be in the sitemap as it stands. See below. |
 | Skipped | The link points to a different site and you chose not to check it on this one. |
 
-Each row also shows the HTTP status, the page title and the reason for the result.
+Each row also shows the HTTP status, how long the page took, the page title and the reason for the result.
 
 ### Sites behind a sign-in or a bot check
 
@@ -84,7 +83,7 @@ If the site blocks links during a run, they are reported as **Blocked** or **Sig
 
 1. Open the blocked link from the notice in a new tab.
 2. Sign in, or complete the check, until the real page shows.
-3. Go back to the tab with the checker and click **Recheck blocked links**.
+3. Go back to the tab with the checker and click the **Recheck** button in the notice.
 
 Only the blocked links are checked again; the other results are kept. After three blocked links in a row the run pauses by itself, so the site is not hit with requests it will only refuse. The recheck button then also carries on with the links that were left.
 
@@ -104,10 +103,11 @@ A page that passes those can still get a **Warning**, with the reason in the Not
 - **No title and no main heading.**
 - **Almost no text.** Fewer than 150 characters of visible text. On a site drawn by scripts this can mean the checker cannot see the page, not that the page is empty.
 
-Every row shows how long the page took in the **Time** column. A time is highlighted when the page took at least 3 seconds and at least twice as long as the typical page in that run, so a slow server does not light up every row. Slowness never changes a link's result. When most pages in a run take 3 seconds or more, a note above the results says the site as a whole is answering slowly, which points to the server or the environment, not to individual pages.
-
 Warnings are not given to redirects or to files that are not web pages, such as PDFs. The canonical address is included in the CSV.
 
+### Response time
+
+Every row shows how long the page took in the **Time** column. A time is highlighted when the page took at least 3 seconds and at least twice as long as the typical page in that run, so a slow server does not light up every row. Slowness never changes a link's result. When most pages in a run take 3 seconds or more, a note above the results says the site as a whole is answering slowly, which points to the server or the environment, not to individual pages.
 ### Pages that load but say "not found"
 
 Many sites answer `200 OK` for a page that only says "we can't find that". The checker catches these by looking for phrases in the page's visible text. The list is in the panel under **Options**, as **Messages that mark a broken page**, one phrase per line:
@@ -122,6 +122,7 @@ If the checker misses a page on your site, copy the wording from that page into 
 
 - **One site at a time.** A browser only lets a page read responses from its own site. Run the checker on the site the sitemap belongs to. Links to other sites are listed as Skipped, unless you choose to check them on the current site.
 - **Redirect type is not reported.** The browser follows redirects itself, so the checker sees that a redirect happened and where it ended, not whether it was a 301 or a 302.
+- **Compressed sitemaps.** Sitemap files ending in `.gz` are not read.
 - **Scripted pages.** The checker reads the HTML the server returns. Content that only appears after scripts run is not seen.
 - **Pace.** Three links are checked at a time. Under **Options**, Gentle checks one at a time and Fast checks six. While a run is going, the status line estimates the time left.
 - **Bot checks are recognized by their wording and markup.** A check the tool does not know looks like an ordinary page. When that happens, the Page title column usually gives it away.
@@ -142,6 +143,7 @@ npm test         # unit tests for the classification rules (Node 18 or newer, no
 npm run build    # rebuilds bookmarklet/index.html from extension/checker.js
 npm run icons    # renders the icons from tools/icon.svg (needs rsvg-convert)
 npm run store    # renders the store listing images into store/ (needs Google Chrome)
+npm run package  # zips the extension folder into dist/ for the Chrome Web Store
 ```
 
 - `extension/checker.js` is the whole checker: sitemap loading, link checking, the panel. The decision about each link is one pure function, `classify`, covered by `test/classify.test.js`.
