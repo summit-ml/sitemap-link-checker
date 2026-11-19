@@ -132,5 +132,7 @@ http.createServer((req, res) => {
     }
     if (guarded.indexOf(p) > -1) { return send(200, 'text/html', page('Brand: ' + p.split('/').pop())); }
     const hit = pages[p] || [404, 'Page Not Found', 'Sorry.'];
-    return send(hit[0], 'text/html', page(hit[1], hit[2]));
+    // answer after a believable, repeatable delay so the Time column does not read 0 ms
+    const wait = 90 + [...p].reduce((sum, ch) => (sum * 31 + ch.charCodeAt(0)) % 9973, 7) % 520;
+    return setTimeout(() => send(hit[0], 'text/html', page(hit[1], hit[2])), wait);
 }).listen(PORT, () => console.log('store images server on ' + ORIGIN));

@@ -37,6 +37,13 @@ Three filters sit above the results and work together:
 
 **Copy links** copies the links currently shown, one per line. **Download CSV** always saves the full run.
 
+After a fix, **Recheck problems** checks again only the links that were not OK and keeps the rest of the results.
+
+### Checking a production sitemap on a staging site
+
+A staging or development site often serves a sitemap whose links point at the live site. The checker can only read the site it is opened on, so those links would all be Skipped. When it finds links on another site, a notice under the sitemap offers to **check them on this site instead, at the same paths**. It is ticked for you when most of the links are elsewhere. The table then shows the address that was checked, and the CSV keeps the address the sitemap listed in a **Listed as** column.
+
+
 To check a list of your own instead, switch **Links to check** to **Pasted list** and paste the links, one per line.
 
 **Options**, under the links, holds the pace and the messages that mark a broken page.
@@ -65,7 +72,7 @@ The images are made from a real run against a small made-up store. `npm run stor
 | No results | The link opened a search or category page that lists nothing. |
 | Error | The site returned an error, the page shows an error message or has an error title, or the link could not be loaded. |
 | Warning | The page loaded, but something says it should not be in the sitemap as it stands. See below. |
-| Skipped | The link points to a different site. See the limits below. |
+| Skipped | The link points to a different site and you chose not to check it on this one. |
 
 Each row also shows the HTTP status, the page title and the reason for the result.
 
@@ -95,6 +102,7 @@ A page that passes those can still get a **Warning**, with the reason in the Not
 - **Marked noindex**, in a robots meta tag or the `X-Robots-Tag` header. A page search engines are told to skip does not belong in a sitemap.
 - **Canonical points elsewhere.** The page names a different path as its canonical address, so the sitemap lists an address the site itself says is not the real one. A canonical on another host with the same path is not reported, since staging sites often point at production.
 - **No title and no main heading.**
+- **Slow.** The page took 3 seconds or more to arrive. Every row shows its response time in the **Time** column.
 - **Almost no text.** Fewer than 150 characters of visible text. On a site drawn by scripts this can mean the checker cannot see the page, not that the page is empty.
 
 Warnings are not given to redirects or to files that are not web pages, such as PDFs. The canonical address is included in the CSV.
@@ -111,7 +119,7 @@ If the checker misses a page on your site, copy the wording from that page into 
 
 ## Limits
 
-- **One site at a time.** A browser only lets a page read responses from its own site. Run the checker on the site the sitemap belongs to. Links to other sites are listed as Skipped.
+- **One site at a time.** A browser only lets a page read responses from its own site. Run the checker on the site the sitemap belongs to. Links to other sites are listed as Skipped, unless you choose to check them on the current site.
 - **Redirect type is not reported.** The browser follows redirects itself, so the checker sees that a redirect happened and where it ended, not whether it was a 301 or a 302.
 - **Scripted pages.** The checker reads the HTML the server returns. Content that only appears after scripts run is not seen.
 - **Pace.** Three links are checked at a time, or one at a time with the Gentle pace.

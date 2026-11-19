@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { classify, sitemapAddress, robotsSitemaps, pickSitemap, norm, isHome, visibleText, csvCell, isLogin, canonicalOf, robotsOf, sameAsNotFound, needsHuman, codeOf, sortCodes, codePreview, matches, DEFAULT_PHRASES } = require('../extension/checker.js');
+const { classify, sitemapAddress, robotsSitemaps, pickSitemap, swapOrigin, otherSites, duration, norm, isHome, visibleText, csvCell, isLogin, canonicalOf, robotsOf, sameAsNotFound, needsHuman, codeOf, sortCodes, codePreview, matches, DEFAULT_PHRASES } = require('../extension/checker.js');
 
 const base = { requestedUrl: 'https://shop.example/luggage/', finalUrl: 'https://shop.example/luggage/', status: 200, redirected: false, title: 'Luggage', heading: 'Luggage', text: 'luggage 20 results ' + 'carry-on and checked bags for every trip. '.repeat(6), phrases: DEFAULT_PHRASES };
 const check = (overrides) => classify(Object.assign({}, base, overrides)).result;
@@ -227,4 +227,25 @@ test('pickSitemap prefers an index on the same site and skips what it cannot rea
     assert.strictEqual(pickSitemap(['https://cdn.example/sitemap.xml', '/maps/sitemap.xml?lang=en'], origin), '/maps/sitemap.xml?lang=en');
     assert.strictEqual(pickSitemap(['https://shop.example/sitemap.xml.gz', 'https://other.example/sitemap.xml'], origin), '');
     assert.strictEqual(pickSitemap([], origin), '');
+});
+
+test('swapOrigin moves a link onto the site being tested and leaves the rest alone', () => {
+    const here = 'https://dev.shop.example';
+    assert.strictEqual(swapOrigin('https://www.shop.example/bags/tote?color=red#top', here), 'https://dev.shop.example/bags/tote?color=red#top');
+    assert.strictEqual(swapOrigin('https://dev.shop.example/bags', here), 'https://dev.shop.example/bags');
+    assert.strictEqual(swapOrigin('not a link', here), 'not a link');
+});
+
+test('otherSites counts links on other sites and names the main one', () => {
+    const links = ['https://www.shop.example/a', 'https://www.shop.example/b', 'https://blog.shop.example/c', 'https://dev.shop.example/d', 'nope'];
+    assert.deepStrictEqual(otherSites(links, 'https://dev.shop.example'), { count: 3, host: 'www.shop.example', hosts: 2 });
+    assert.deepStrictEqual(otherSites(['https://dev.shop.example/d'], 'https://dev.shop.example'), { count: 0, host: '', hosts: 0 });
+});
+
+test('a slow page is a Warning, and duration reads naturally', () => {
+    assert.match(outcome({ ms: 3400 }).note, /Slow: took 3\.4 s/);
+    assert.strictEqual(check({ ms: 2999 }), 'OK');
+    assert.strictEqual(check({ ms: 9000, status: 404 }), 'Not found');
+    assert.strictEqual(duration(420), '420 ms');
+    assert.strictEqual(duration(1250), '1.3 s');
 });

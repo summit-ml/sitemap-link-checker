@@ -26,6 +26,8 @@
   var PAUSE_AFTER = 3;
   // a page with less visible text than this is reported as nearly empty
   var THIN_TEXT = 150;
+  // a page that takes longer than this to arrive is reported as slow
+  var SLOW_MS = 3000;
   // wording in a page title or main heading that marks a not-found or error page on any kind of site
   var NOT_FOUND_TITLE = /\b404\b|not found|can(?:no|')t be found|could(?:n't| not) be found|does(?:n't| not) exist|no longer (?:available|exists)|page (?:is )?missing/;
   var ERROR_TITLE = /^\s*(?:error|oops)\b|something went wrong|server error|internal error|unexpected error|application error/;
@@ -166,6 +168,7 @@
    * @param {string} [info.canonical] - the canonical address the page names
    * @param {string} [info.robots] - robots instructions from the meta tags and the response header, lower case
    * @param {boolean} [info.isHtml] - false when the response is not a web page (a PDF, a download)
+   * @param {number} [info.ms] - how long the page took to arrive, in milliseconds
    * @param {?Object} [info.notFoundPage] - what the site's not-found page looks like, see sameAsNotFound
    * @returns {{result: string, note: string}} the outcome
    */
@@ -208,18 +211,24 @@
     }
     if (info.title !== undefined && !info.title && !info.heading) { warnings.push('No title and no main heading'); }
     if (text.trim().length < THIN_TEXT) { warnings.push('Almost no text on the page. If scripts draw the page, the checker cannot see it'); }
+    if (info.ms >= SLOW_MS) { warnings.push('Slow: took ' + duration(info.ms)); }
     if (warnings.length) { return { result: 'Warning', note: warnings.join('. ') + '.' }; }
     return { result: 'OK', note: '' };
   }
 
+  // checked address -> the address the sitemap listed, for links moved onto this site
+  var listedAs = {};
+
   async function checkOne(url, phrases, notFoundPage) {
-    var row = { url: url, result: '', status: '', finalUrl: '', title: '', heading: '', canonical: '', note: '' };
+    var row = { url: url, listed: listedAs[url] || '', result: '', status: '', ms: '', finalUrl: '', title: '', heading: '', canonical: '', note: '' };
     var target;
     try { target = new URL(url, location.href); } catch (e) { row.result = 'Error'; row.note = 'Not a valid link'; return row; }
-    if (target.origin !== location.origin) { row.result = 'Skipped'; row.note = 'Different site (' + target.origin + '). Run the checker on that site.'; return row; }
+    if (target.origin !== location.origin) { row.result = 'Skipped'; row.note = 'Different site (' + target.origin + '). Run the checker on that site, or choose to check these links on this site.'; return row; }
     try {
+      var began = Date.now();
       var got = await getText(target.href);
       var res = got.res, html = got.text;
+      row.ms = Date.now() - began;
       row.status = res.status;
       row.finalUrl = res.url;
       row.title = pick(html, /<title[^>]*>([\s\S]*?)<\/title>/i);
@@ -238,6 +247,7 @@
         canonical: row.canonical,
         robots: (isHtml ? robotsOf(html) : '') + ',' + (res.headers.get('x-robots-tag') || '').toLowerCase(),
         isHtml: isHtml,
+        ms: row.ms,
         notFoundPage: notFoundPage,
         phrases: phrases
       });
@@ -321,6 +331,38 @@
   }
 
   /**
+   * The same address on another site: used to check a production sitemap's links on a staging site.
+   * @param {string} url - an absolute address
+   * @param {string} origin - the origin to move it to, for example "https://staging.shop.example"
+   * @returns {string} the address with its origin replaced, or the address unchanged when it is already there or not valid
+   */
+  function swapOrigin(url, origin) {
+    try { var u = new URL(url); return u.origin === origin ? url : origin + u.pathname + u.search + u.hash; } catch (e) { return url; }
+  }
+
+  /**
+   * Counts the links that are not on the site being tested.
+   * @param {string[]} links - absolute addresses
+   * @param {string} origin - the origin of the site being tested
+   * @returns {{count: number, host: string, hosts: number}} how many, the most common other host, and how many other hosts there are
+   */
+  function otherSites(links, origin) {
+    var seen = {}, count = 0;
+    (links || []).forEach(function (link) {
+      try { var u = new URL(link); if (u.origin !== origin) { count++; seen[u.host] = (seen[u.host] || 0) + 1; } } catch (e) { /* not a link */ }
+    });
+    var hosts = Object.keys(seen).sort(function (a, b) { return seen[b] - seen[a]; });
+    return { count: count, host: hosts[0] || '', hosts: hosts.length };
+  }
+
+  /**
+   * A response time for display.
+   * @param {number} ms - milliseconds
+   * @returns {string} for example "420 ms" or "3.4 s"
+   */
+  function duration(ms) { return ms < 1000 ? Math.round(ms) + ' ms' : (ms / 1000).toFixed(1) + ' s'; }
+
+  /**
    * The sitemap addresses a robots.txt file declares.
    * @param {string} text - the contents of robots.txt
    * @returns {string[]} the addresses on its "Sitemap:" lines, in order
@@ -345,7 +387,7 @@
 
   // Node (tests): expose the pure helpers and stop before any DOM work.
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { classify: classify, sitemapAddress: sitemapAddress, robotsSitemaps: robotsSitemaps, pickSitemap: pickSitemap, norm: norm, isHome: isHome, visibleText: visibleText, csvCell: csvCell, isLogin: isLogin, canonicalOf: canonicalOf, robotsOf: robotsOf, sameAsNotFound: sameAsNotFound, needsHuman: needsHuman, codeOf: codeOf, sortCodes: sortCodes, codePreview: codePreview, matches: matches, DEFAULT_PHRASES: DEFAULT_PHRASES };
+    module.exports = { classify: classify, sitemapAddress: sitemapAddress, robotsSitemaps: robotsSitemaps, swapOrigin: swapOrigin, otherSites: otherSites, duration: duration, pickSitemap: pickSitemap, norm: norm, isHome: isHome, visibleText: visibleText, csvCell: csvCell, isLogin: isLogin, canonicalOf: canonicalOf, robotsOf: robotsOf, sameAsNotFound: sameAsNotFound, needsHuman: needsHuman, codeOf: codeOf, sortCodes: sortCodes, codePreview: codePreview, matches: matches, DEFAULT_PHRASES: DEFAULT_PHRASES };
     return;
   }
 
@@ -363,6 +405,8 @@
     'h2 svg{flex:none;border-radius:22%}',
     '.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}',
     'label{display:block;font-weight:600;margin:12px 0 4px}',
+    '.swap{display:flex;gap:8px;align-items:flex-start;font-weight:400;margin:8px 0 0;padding:9px 12px;border:1px solid #e8c88a;background:#fff8e8;border-radius:8px}',
+    'td.slow{color:#b26a00;font-weight:600}',
     '.between{justify-content:space-between;margin-bottom:8px}.sec{font-weight:600}',
     '.help{margin:6px 0 0;color:#5b6875;font-size:13px}.help strong{color:#16202a}',
     '#panePaste textarea{min-height:104px}',
@@ -425,6 +469,7 @@
     '<div id="files"></div>',
     '</div>',
     '<div id="panePaste" hidden><textarea id="paste" aria-label="Links to check, one per line" placeholder="https://…"></textarea><p class="help">One link per line. Only links on this site can be checked.</p></div>',
+    '<label class="swap" id="swapRow" hidden><input type="checkbox" id="swap"><span id="swapText"></span></label>',
     '<details class="opts"><summary>Options</summary><div class="optbody">',
     '<div><label for="pace">Pace</label><select id="pace"><option value="normal">Normal (3 at a time)</option><option value="gentle">Gentle (1 at a time)</option></select>',
     '<p class="help">Gentle is slower but less likely to set off a bot check.</p>',
@@ -432,13 +477,13 @@
     '<div><label for="phrases">Messages that mark a broken page</label><textarea id="phrases"></textarea>',
     '<p class="help">One per line. A page whose text contains one of these is reported as Not found, as No results if the phrase contains "no results" or "(0)", or as Error if it contains the word "error".</p></div>',
     '</div></details>',
-    '<div class="row" style="margin-top:14px"><button class="primary" id="start">Check links</button><button id="stop" disabled>Stop</button><button id="csv" disabled>Download CSV</button><span class="muted" id="status" aria-live="polite"></span></div>',
+    '<div class="row" style="margin-top:14px"><button class="primary" id="start">Check links</button><button id="stop" disabled>Stop</button><button id="csv" disabled>Download CSV</button><button id="again" disabled>Recheck problems</button><span class="muted" id="status" aria-live="polite"></span></div>',
     '<div class="bar"><i id="prog"></i></div>',
     '<div class="gate" id="gate" role="status" hidden></div>',
     '<div class="row" id="filters"></div>',
     '<div class="results">',
     '<div class="row" id="find" hidden><input class="grow" id="q" type="text" placeholder="Search links, titles and notes" aria-label="Search results"><button id="copy">Copy links</button><span class="muted" id="shown" aria-live="polite"></span></div>',
-    '<div class="scroll"><table><thead><tr><th>Result</th><th>Status</th><th>Link</th><th>Went to</th><th>Page title</th><th>Note</th></tr></thead><tbody id="rows"></tbody></table></div></div>',
+    '<div class="scroll"><table><thead><tr><th>Result</th><th>Status</th><th>Time</th><th>Link</th><th>Went to</th><th>Page title</th><th>Note</th></tr></thead><tbody id="rows"></tbody></table></div></div>',
     '<div class="by">Powered by <a href="https://summitml.com" target="_blank" rel="noopener">Summit ML</a></div>',
     '</div></div>'
   ].join('');
@@ -487,6 +532,7 @@
   function renderFilters() {
     var counts = { All: rows.length }, codes = {};
     rows.forEach(function (r) { counts[r.result] = (counts[r.result] || 0) + 1; codes[codeOf(r)] = (codes[codeOf(r)] || 0) + 1; });
+    if (filter !== 'All' && !counts[filter]) { filter = 'All'; }
     var order = ['All', 'Blocked', 'Sign-in needed', 'Not found', 'No results', 'Error', 'Warning', 'Redirect to home', 'Redirect', 'Skipped', 'OK'];
     $('filters').innerHTML = '';
     var group = document.createElement('div'); group.className = 'seg'; group.setAttribute('role', 'group'); group.setAttribute('aria-label', 'Filter by result');
@@ -530,7 +576,7 @@
     $('copy').disabled = !list.length;
     if (rows.length && !list.length) {
       var empty = document.createElement('tr'), cell = document.createElement('td');
-      cell.colSpan = 6; cell.className = 'none'; cell.textContent = 'No links match these filters.';
+      cell.colSpan = 7; cell.className = 'none'; cell.textContent = 'No links match these filters.';
       empty.appendChild(cell); body.appendChild(empty);
       return;
     }
@@ -543,6 +589,7 @@
       }
       td(r.result, 'r ' + cls(r.result));
       td(r.status || '', 's' + (isBad(r.status) ? ' bad' : ''));
+      td(r.ms === '' ? '' : duration(r.ms), 's' + (r.ms >= SLOW_MS ? ' slow' : ''));
       td(r.url, 'u', r.url);
       var moved = r.finalUrl && norm(r.finalUrl) !== norm(r.url) ? r.finalUrl : '';
       td(moved, 'u', moved);
@@ -594,8 +641,9 @@
         for (var i = 0; i < parsed.list.length; i++) {
           var child = parsed.list[i], count = '?', links = [];
           try {
-            var same = new URL(child).origin === location.origin;
-            if (same) { var c = await getText(child); links = locs(c.text).list; count = links.length; }
+            // a sitemap index copied from another environment names files there; read the same file on this site
+            var c = await getText(swapOrigin(child, location.origin));
+            if (c.res.ok) { links = locs(c.text).list; count = links.length; }
           } catch (e) { count = '?'; }
           files.push({ url: child, links: links, count: count });
           setStatus('Reading sitemap files… ' + (i + 1) + ' of ' + parsed.list.length);
@@ -614,6 +662,7 @@
         box.appendChild(l);
       });
       $('files').innerHTML = ''; $('files').appendChild(box);
+      updateSwap();
       setStatus(files.length + ' sitemap file' + (files.length === 1 ? '' : 's') + ' found. Tick the ones to check.');
     } catch (e) {
       setStatus('Could not load the sitemap: ' + (e && e.message ? e.message : e));
@@ -624,6 +673,7 @@
   function setSource(name) {
     source = name;
     $('paneMap').hidden = name !== 'map'; $('panePaste').hidden = name !== 'paste';
+    $('swapRow').hidden = true; updateSwap();
     [['srcMap', 'map'], ['srcPaste', 'paste']].forEach(function (pair) {
       $(pair[0]).className = pair[1] === name ? 'on' : ''; $(pair[0]).setAttribute('aria-pressed', pair[1] === name ? 'true' : 'false');
     });
@@ -637,6 +687,20 @@
     }
     var seen = {};
     return list.filter(function (u) { if (seen[u]) { return false; } seen[u] = 1; return true; });
+  }
+
+  // offers to check links from another site (a production sitemap, say) on the site being tested instead
+  function updateSwap() {
+    var all = [];
+    if (source === 'map') { files.forEach(function (f) { all = all.concat(f.links); }); } else { all = collectLinks(); }
+    var other = otherSites(all, location.origin), wasHidden = $('swapRow').hidden;
+    $('swapRow').hidden = !other.count;
+    if (!other.count) { return; }
+    $('swapText').textContent = other.count + ' of ' + plural(all.length, 'link') + (other.count === 1 ? ' is' : ' are') + ' on ' + other.host +
+      (other.hosts > 1 ? ' and ' + plural(other.hosts - 1, 'other site') : '') + ', which the checker cannot read from here. Check ' +
+      (other.count === 1 ? 'it' : 'them') + ' on this site (' + location.host + ') instead, at the same paths.';
+    // when most of the list is elsewhere, it is almost certainly the same site in another environment
+    if (wasHidden) { $('swap').checked = other.count * 2 >= all.length; }
   }
 
   function gated() { return rows.filter(needsHuman); }
@@ -661,13 +725,13 @@
     el('li', 'Come back to this tab and click the button below.', steps);
     var again = el('button', 'Recheck ' + plural(list.length, 'blocked link') + (pending.length ? ' and continue' : ''));
     again.className = 'primary';
-    again.addEventListener('click', recheck);
+    again.addEventListener('click', function () { recheck(needsHuman); });
     el('span', '  Blocked again? Set Pace to Gentle under Options and recheck.').className = 'muted';
   }
 
   async function runQueue() {
     running = true; stopRequested = false; paused = false;
-    $('start').disabled = true; $('stop').disabled = false; $('csv').disabled = true; $('pace').disabled = true;
+    $('start').disabled = true; $('stop').disabled = false; $('csv').disabled = true; $('pace').disabled = true; $('again').disabled = true;
     renderGate();
     var gentle = $('pace').value === 'gentle', streak = 0, inflight = 0;
     async function worker() {
@@ -690,7 +754,7 @@
     var weight = { 'Blocked': -2, 'Sign-in needed': -1, 'Not found': 0, 'No results': 1, 'Error': 2, 'Warning': 2.5, 'Redirect to home': 3, 'Redirect': 4, 'Skipped': 5, 'OK': 6 };
     rows.sort(function (a, b) { return weight[a.result] - weight[b.result]; });
     running = false; $('start').disabled = false; $('stop').disabled = true; $('csv').disabled = !rows.length; $('pace').disabled = false;
-    renderFilters(); renderRows(); renderGate();
+    renderFilters(); renderRows(); renderGate(); updateAgain();
     var problems = rows.filter(function (r) { return r.result !== 'OK'; }).length;
     setStatus(paused ? 'Paused after ' + rows.length + ' links. The site wants a sign-in or a bot check: follow the steps below.'
       : (stopRequested ? 'Stopped. ' : 'Done. ') + rows.length + ' checked, ' + problems + ' need a look.');
@@ -699,6 +763,12 @@
   async function start() {
     if (running) { return; }
     var links = collectLinks();
+    listedAs = {};
+    if (!$('swapRow').hidden && $('swap').checked) {
+      var moved = {};
+      links = links.map(function (u) { var to = swapOrigin(u, location.origin); if (to !== u) { listedAs[to] = u; } return to; })
+        .filter(function (u) { if (moved[u]) { return false; } moved[u] = 1; return true; });
+    }
     if (!links.length) { setStatus(source === 'map' ? 'Nothing to check. Load a sitemap and tick a file first.' : 'Nothing to check. Paste some links first.'); return; }
     phrases = $('phrases').value.split('\n').map(function (p) { return p.trim().toLowerCase(); }).filter(Boolean);
     rows = []; pending = links; filter = 'All'; codeSet = []; codesOpen = false; $('q').value = '';
@@ -709,21 +779,27 @@
     await runQueue();
   }
 
-  // checks the blocked links again, then carries on with whatever a pause left unchecked
-  async function recheck() {
+  function isProblem(row) { return row.result !== 'OK' && row.result !== 'Skipped'; }
+  function updateAgain() {
+    var n = rows.filter(isProblem).length;
+    $('again').disabled = running || !n; $('again').textContent = 'Recheck problems' + (n ? ' (' + n + ')' : '');
+  }
+
+  // checks some of the links again (the blocked ones by default), then carries on with whatever a pause left unchecked
+  async function recheck(which) {
     if (running) { return; }
-    var again = gated().map(function (r) { return r.url; });
+    var pick = typeof which === 'function' ? which : needsHuman;
+    var again = rows.filter(pick).map(function (r) { return r.url; });
     if (!again.length && !pending.length) { return; }
-    rows = rows.filter(function (r) { return !needsHuman(r); });
+    rows = rows.filter(function (r) { return !pick(r); });
     pending = again.concat(pending);
-    if (filter === 'Blocked' || filter === 'Sign-in needed') { filter = 'All'; }
     await runQueue();
   }
 
   function downloadCsv() {
-    var head = ['Result', 'Link', 'Went to', 'Status', 'Page title', 'Main heading', 'Canonical', 'Note'];
+    var head = ['Result', 'Link', 'Listed as', 'Went to', 'Status', 'Time (ms)', 'Page title', 'Main heading', 'Canonical', 'Note'];
     var lines = [head.join(',')].concat(rows.map(function (r) {
-      return [r.result, r.url, r.finalUrl, r.status, r.title, r.heading, r.canonical, r.note].map(csvCell).join(',');
+      return [r.result, r.url, r.listed, r.finalUrl, r.status, r.ms, r.title, r.heading, r.canonical, r.note].map(csvCell).join(',');
     }));
     var blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv' });
     var a = document.createElement('a');
@@ -740,6 +816,8 @@
   $('stop').addEventListener('click', function () { stopRequested = true; setStatus('Stopping…'); });
   $('csv').addEventListener('click', downloadCsv);
   $('copy').addEventListener('click', copyLinks);
+  $('again').addEventListener('click', function () { recheck(isProblem); });
+  $('paste').addEventListener('input', updateSwap);
   // the status code menu closes on a click anywhere else, or on Escape
   root.addEventListener('click', function (e) { if (codesOpen && !(e.target.closest && e.target.closest('.dd'))) { codesOpen = false; renderFilters(); } });
   root.addEventListener('keydown', function (e) { if (codesOpen && e.key === 'Escape') { codesOpen = false; renderFilters(); var b = root.querySelector('.dd>button'); if (b) { b.focus(); } } });
@@ -751,7 +829,7 @@
     // for scripted use: resolves with the result rows
     run: async function (links) { if (links && links.length) { $('paste').value = links.join('\n'); setSource('paste'); } await start(); return rows; },
     load: loadSitemap,
-    recheck: async function () { await recheck(); return rows; },
+    recheck: async function () { await recheck(needsHuman); return rows; },
     rows: function () { return rows; }
   };
 }());
